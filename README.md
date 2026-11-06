@@ -45,12 +45,12 @@ sudo apt-get install -y python3 util-linux
 `vps-installer-main` выполните `sudo ./install.sh`. Через Git:
 
 ```bash
-git clone REPOSITORY_URL vps-installer
+git clone https://github.com/ComradDart/vps-installer.git vps-installer
 cd vps-installer
 sudo ./install.sh
 ```
 
-`REPOSITORY_URL` — URL этого репозитория из кнопки Code. Все модули должны оставаться
+Все модули должны оставаться
 рядом с install.sh. Если нужен один файл, скачайте `download/vps_setup.sh`
 (кнопка Download raw file в GitHub) и выполните команду из раздела ниже.
 
