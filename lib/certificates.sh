@@ -3,7 +3,7 @@ certbot_stack() {
     certbot --config-dir "$ROOT/letsencrypt" --work-dir "$ROOT/certbot-work" --logs-dir "$ROOT/certbot-logs" "$@"
 }
 check_dns() {
-    python3 "$APP/helpers/dns.py" "$DOMAIN" "$PUBLIC_IP"
+    python3 "$APP/helpers/dns.py" "$DOMAIN" "$PUBLIC_IP" --allow-proxy
 }
 acme_probe() {
     local token expected actual
@@ -15,8 +15,8 @@ acme_probe() {
         rm -f "$ROOT/acme/.well-known/acme-challenge/$token"; die 'Local ACME webroot inaccessible';
     }
     [[ $actual == "$expected" ]] || { rm -f "$ROOT/acme/.well-known/acme-challenge/$token"; die 'Wrong local ACME response'; }
-    actual=$(curl --noproxy '*' -fsS --max-time 30 "http://$DOMAIN/.well-known/acme-challenge/$token") || {
-        rm -f "$ROOT/acme/.well-known/acme-challenge/$token"; die 'Public ACME webroot inaccessible; check DNS/firewall/Cloudflare';
+    actual=$(curl --noproxy '*' -fsS --location --max-redirs 5 --proto '=http,https' --proto-redir '=http,https' --max-time 30 "http://$DOMAIN/.well-known/acme-challenge/$token") || {
+        rm -f "$ROOT/acme/.well-known/acme-challenge/$token"; die 'Public ACME challenge failed. Cloudflare: remove challenges/cache/forced HTTPS for the ACME path, or temporarily use DNS only. HTTP nginx retained.';
     }
     rm -f "$ROOT/acme/.well-known/acme-challenge/$token"
     [[ $actual == "$expected" ]] || die 'Wrong public ACME response'

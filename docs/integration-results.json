@@ -21,7 +21,7 @@
   },
   {
     "status": "PASSED",
-    "check": "Real HTTP ACME webroot serving; no certificate issuance claimed"
+    "check": "Real HTTP and CA-verified HTTPS ACME webroot serving; no certificate issuance claimed"
   },
   {
     "status": "PASSED",

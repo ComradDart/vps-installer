@@ -53,6 +53,7 @@ bootstrap_main() {
         return 1
     fi
     printf '[+] Detected %s\n' "${PRETTY_NAME:-Linux}"
+    printf '[!] TLS needs HTTP-01 on port 80. Cloudflare Proxy must allow the ACME path; use DNS only for first issuance if redirects or challenges interfere.\n'
     BOOTSTRAP_TEMP=$(mktemp -d /tmp/vps-bootstrap.XXXXXX)
     trap bootstrap_cleanup EXIT
     trap 'exit 130' INT

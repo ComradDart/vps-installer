@@ -74,3 +74,23 @@ TLS проверялся через временный доверенный CA �
   ошибка не игнорируется и установка не продолжается без SSH jail.
 - 4 новых unit-теста: задержка сокета, задержка jail, падение службы и timeout.
   Итого 82 unit-теста. Реальная служба на VPS требует повторной проверки.
+
+## Обновление: proxy DNS и HAHA BENIS playground
+
+- DNS preflight перенесён до пакетов/SSH/UFW/Docker. Прокси-адреса могут отличаться
+  от origin; обязательная проверка публичного случайного ACME-файла сохранена.
+- ACME path доступен и через HTTPS; публичная проверка следует HTTP/HTTPS redirects
+  с нормальной проверкой TLS. Первый redirect к origin без сертификата всё ещё
+  требует исключения в Cloudflare или временного DNS only.
+- 88 unit/negative тестов проходят, включая proxy A/AAAA, отсутствие DNS,
+  IPv4-only direct origin и отказ до вызова системных пакетов.
+- Новые локальные HTML/CSS/JS: глитчи, CRT/canvas, орбиты, терминал, рандомайзер,
+  WARP, кнопка хаоса, счётчик кликов браузера и отключение эффектов.
+- Chromium/Playwright: проверены desktop 1440px и mobile 390px, отсутствие
+  горизонтального overflow, кнопки WARP/рандомайзер/хаос, клавиатурная ручка настройки,
+  pause/persistence и reduced motion. Нет JavaScript exceptions и внешних запросов.
+- Site-only renderer отдельно проверен: Compose, nginx configs, БД и другие файлы сайта
+  остаются нетронутыми при --reconfigure. Код приложения обновляется после backup.
+- Повторный Docker integration: 3 PASSED (62.49 s), включая выдачу одного и того же
+  ACME nonce по HTTP и HTTPS с проверкой тестовой CA-цепочки; полный Cloudflare/LE E2E
+  на VPS остаётся MANUAL.

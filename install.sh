@@ -45,7 +45,7 @@ collect_state() {
     case "$SSH_PORT" in 80|443|2053|8443) die 'SSH port conflicts with the managed stack';; esac
     ask DOMAIN 'Own domain (ASCII/punycode, no URL prefix; apex allowed)'
     DOMAIN=${DOMAIN,,}; valid_domain "$DOMAIN" || die 'Invalid domain'
-    ask PUBLIC_IP 'This origin server public IPv4 (A record must point here before install)'
+    ask PUBLIC_IP 'Origin IPv4 of this VPS (Cloudflare Proxy may return different public DNS addresses)'
     ask EMAIL "Let's Encrypt email"
     ask SUBNET 'Unused private Docker /24 subnet' 172.30.53.0/24
     ask title 'Site title' 'HAHA BENIS'
@@ -63,6 +63,7 @@ d=dict(zip(keys,sys.argv[2:-1]));d.update(schema='1',phase='configured');write(s
 EOF
 }
 install_main() {
+    warn 'Before setup: TLS uses HTTP-01 on port 80. Cloudflare Proxy must pass the ACME path; otherwise use DNS only until the first certificate is issued.'
     preflight
     if [[ -f $STATE ]]; then
         load_state
@@ -77,6 +78,8 @@ install_main() {
         collect_state
         load_state
     fi
+    # Resolve and warn before package, user, SSH, UFW or Docker changes.
+    check_dns
     base_packages
     install_app
     setup_user
@@ -110,9 +113,9 @@ reconfigure_site() {
     cp -a "$STATE" "$TMPDIR_TASK/site-state.json"
     python3 "$APP/helpers/state.py" set "$TMPDIR_TASK/site-state.json" title "$title"
     python3 "$APP/helpers/state.py" set "$TMPDIR_TASK/site-state.json" text "$text"
+    install_app
+    python3 "$APP/helpers/render.py" site "$TMPDIR_TASK/site-state.json" "$ROOT" "$APP/templates"
     install -m 600 "$TMPDIR_TASK/site-state.json" "$STATE"
-    rm -f "$ROOT/site/index.html" "$ROOT/site/style.css" "$ROOT/site/app.js"
-    render
     nginx_validate_reload
 }
 main() {
@@ -145,4 +148,4 @@ main() {
         --renew) require_docker; renew_certificate;;
     esac
 }
-main "$@"
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi

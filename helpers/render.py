@@ -36,6 +36,15 @@ def render(state,root,templates):
         dest=root/'site'/src.name
         if not dest.exists():atomic(dest,subst(src.read_text()))
 
+def site(state,root,templates):
+    """Explicit site update: never rewrite Compose or nginx configuration."""
+    d=json.loads(Path(state).read_text());validate(d);root=Path(root);templates=Path(templates)
+    target=root/'site';target.mkdir(parents=True,exist_ok=True);target.chmod(0o755)
+    for name in ('index.html','style.css','app.js'):
+        text=(templates/'site'/name).read_text()
+        text=text.replace('@@TITLE@@',html.escape(d['title'])).replace('@@TEXT@@',html.escape(d['text']))
+        atomic(target/name,text)
+
 def tls(state,root,templates):
     d=json.loads(Path(state).read_text());validate(d);root=Path(root);templates=Path(templates)
     assert (root/'tls/fullchain.pem').is_file() and (root/'tls/privkey.pem').is_file(), 'TLS files missing'
@@ -45,5 +54,6 @@ def tls(state,root,templates):
 if __name__=='__main__':
     try:
         if sys.argv[1]=='tls':tls(*sys.argv[2:])
+        elif sys.argv[1]=='site':site(*sys.argv[2:])
         else:render(*sys.argv[1:])
     except (OSError,ValueError,AssertionError) as e:print('Render failed: '+str(e),file=sys.stderr);sys.exit(1)

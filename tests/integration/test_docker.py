@@ -135,7 +135,9 @@ def test_real_stack_tls_reset_backup_rerun(live):
     # Real ACME webroot bytes, with no call to public ACME servers.
     probe=root/'acme/.well-known/acme-challenge/test';probe.write_text('acme-exact-bytes');probe.chmod(0o644)
     text=run(['curl','--noproxy','*','-fsS','http://127.0.0.1:'+str(c['ports']['http'])+'/.well-known/acme-challenge/test'])
-    assert text=='acme-exact-bytes';probe.unlink();passed('Real HTTP ACME webroot serving; no certificate issuance claimed')
+    assert text=='acme-exact-bytes'
+    secure=run(['curl','--noproxy','*','-fsS','--cacert',c['ca'],'--resolve','example.test:'+str(c['ports']['tls'])+':127.0.0.1','https://example.test:'+str(c['ports']['tls'])+'/.well-known/acme-challenge/test'])
+    assert secure=='acme-exact-bytes';probe.unlink();passed('Real HTTP and CA-verified HTTPS ACME webroot serving; no certificate issuance claimed')
     dc('stop','xui')
     before=fingerprint(root/'db/x-ui.db');oldpass=c['password'];c['oldpassword']=oldpass;c['password']=secrets.token_hex(24)
     credentials(c,'reset');assert fingerprint(root/'db/x-ui.db')==before
