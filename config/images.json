@@ -1,0 +1,4 @@
+{
+  "xui_image": "ghcr.io/mhsanaei/3x-ui:latest",
+  "nginx_image": "nginx:latest"
+}
