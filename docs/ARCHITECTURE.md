@@ -1,37 +1,58 @@
-# Архитектура первоначальной установки
+# Архитектура
 
-Обе метки роли устанавливают одинаковую инфраструктуру. По последнему уточнению
-заказчика транспорта, Xray inbound/clients и double-hop в поставке нет.
+Все образы остаются `latest`. Общая настройка VPS одинакова; транспорт применяется
+после готовности панели и HTTPS. Пароль создаётся через официальный CLI и проверяется
+реальным login. Для дальнейшего API используется root-only Bearer token, без сброса пароля.
 
 ```text
-Internet TCP 80  -> nginx:80   -> HTTP-01 webroot / HTTPS redirect
-Internet TCP 443 -> nginx:8443 -> TLS + HTTP/2 -> static site
-Host 127.0.0.1:2053 -> xui:2053 (панель по SSH-туннелю)
-Host 127.0.0.1:8443 -> nginx:8443 (локальная проверка TLS)
+cloudflare-grpc / direct-grpc:
+  client -> [Cloudflare, если выбран] -> host TCP443 -> nginx:8443 TLS + HTTP/2
+    /                  -> static site
+    /vlessgrpc/Tun     -> grpc://xui:10000 -> VLESS -> Internet или заданный OUTBOUND
+
+direct-reality (отдельный режим, без Cloudflare Proxy):
+  client -> host TCP443 -> xui:443 REALITY / Vision -> Internet или заданный OUTBOUND
+                            target nginx:8443 -> HTTPS static site
+
+host TCP80           -> nginx:80 ACME + redirect
+host 127.0.0.1:2053   -> xui:2053, панель только через SSH-туннель
+host 127.0.0.1:8443   -> nginx:8443, локальная диагностика
 ```
 
-| Порт | Назначение | Доступ |
-|---|---|---|
-| выбранный SSH/TCP | host sshd | внешний, public-key auth после двух gate |
-| 80/TCP | nginx / ACME | внешний IPv4 |
-| 443/TCP | nginx / HTTPS-сайт | внешний IPv4 |
-| 2053/TCP | 3x-ui | только 127.0.0.1 хоста |
-| 8443/TCP | nginx TLS diagnostics | только 127.0.0.1 хоста |
-| Xray / subscription / UDP | не публикуются | пользователь настраивает отдельно |
+Никогда не публикуются TCP/10000, UDP/80 и UDP/443. Общий IPv4 Docker bridge
+позволяет nginx обращаться к `xui`, Xray — к `nginx`. Host networking и дополнительные
+capabilities не используются. nginx — UID101, read-only rootfs, tmpfs; xui — штатный
+container root с cap_drop ALL. Low-port sysctl ограничен netns контейнера.
 
-Сеть: отдельный Docker bridge IPv4 /24, без host networking. Она не internal:
-приложению может требоваться исходящий Интернет. nginx — UID/GID 101, read-only rootfs,
-cap_drop ALL, tmpfs cache/pid; xui — root контейнера без capabilities. Низкие порты
-разрешаются sysctl только внутри netns контейнера, не глобально на VPS.
+`state.json` содержит общую identity, `transport.json` — выбранные mode/topology/active.
+Секреты: `secrets/xui-api.token`, `secrets/managed-xray.json`, optional `secrets/relay.json`;
+профили: `clients/`. Все они mode600 под root-only каталогом. Общий state не исполняется.
 
-Оба образа latest по требованию пользователя. Обычный install повторно pull-ит их
-после backup, остальные команды не обновляют образы.
+API-контракт изучен по официальному release 3.11.0 и проверен на работающем `latest`.
+Версия будущего образа проверяется до API mutations: неизвестная версия останавливает
+автоматизацию. Файл контракта не закрепляет Docker tag или digest.
 
-UFW защищает host; DOCKER-USER guard ограничивает forwarded входящий трафик к своей
-subnet по original destination port 80/443. Native nftables backend Docker не поддержан:
-если DOCKER-USER отсутствует, установка прекращается. iptables-nft frontend с обычным
-Docker iptables backend допустим. Скрипт не flush-ит чужие цепочки и не выключает firewall.
+Перед записью читаются существующие inbound. Установщик владеет только точной remark
+`vps-installer:ROLE:MODE` с сохранённым UUID тестового клиента. Чужой порт/конфигурация
+вызывают отказ. Дополнительные пользовательские клиенты сохраняются. Потерянный локальный
+cache восстанавливается из API; существующий UUID/REALITY key не генерируется заново.
 
-Публикации проверяются через docker inspect, а host listeners через ss. Из-за известных
-проблем старых Docker с loopback publication требуется Engine >=28. Проверка извне VPS
-остаётся обязательной. Старые UFW rules сохраняются и могут быть отмечены --check.
+Перед применением нормализованный Compose и кандидат nginx проходят реальные проверки.
+Приватный `.transport-transaction/journal.json` хранит старые файлы, API template и id.
+При ошибке удаляется только созданный этой транзакцией inbound, возвращаются изменённые
+файлы и template. Hash guards не дают затереть параллельные изменения администратора:
+в таком случае journal сохраняется и требуется review. Pending UUID остаётся для повторения.
+
+REALITY target проверяется из Xray с SNI и TLS, затем настоящим клиентом, до передачи
+публичного 443 от nginx к Xray. Проверяется единственный владелец публичного порта.
+Оба режима требуют реального VLESS data transfer через отдельный Xray client с одним
+proxy outbound и без direct fallback. Проверяется полученный выходной IPv4.
+
+Для relay профиль OUTBOUND должен пройти настоящий клиентский тест до локальных
+маршрутных изменений. Первое правило полного inboundTag направляет весь его трафик
+в явно заданный VLESS outbound; правила по отдельным доменам/IP не придумываются.
+
+UFW защищает host; DOCKER-USER guard ограничивает forwarded входящий трафик своей subnet
+по original destination TCP80/443. Native nftables backend Docker не поддерживается;
+iptables-nft frontend с Docker iptables backend допустим. Проверяются реальные
+PortBindings и listeners, Engine >=28. Внешний scan и host lifecycle требуют VPS.

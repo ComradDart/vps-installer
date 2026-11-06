@@ -22,6 +22,7 @@ load_state(){ :; }
 backup_stack(){ :; }
 collect_state(){ :; }
 confirm(){ :; }
+transport_select(){ :; }
 check_dns(){ printf 'DNS_CHECK\n'; return 1; }
 base_packages(){ printf 'UNSAFE_PACKAGES\n'; }
 install_main

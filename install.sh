@@ -10,7 +10,7 @@ export DOCKER_HOST=unix:///var/run/docker.sock
 APP=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 # shellcheck source=lib/common.sh
 source "$APP/lib/common.sh"
-for module in hardening ssh firewall docker xui nginx certificates backup checks; do
+for module in hardening ssh firewall docker xui nginx certificates backup checks automation; do
     # shellcheck source=/dev/null
     source "$APP/lib/$module.sh"
 done
@@ -20,9 +20,11 @@ Usage: sudo ./install.sh [command]
   (none)                   Install or resume same saved role/identity
   --help                   Show help (no root/mutations needed)
   --status                 Show saved state, containers, sockets, timers
-  --check                  Verify initial infrastructure
+  --check                  Verify infrastructure and real authenticated VLESS transfer
   --reconfigure            Explicitly update site title/text; other identity stays fixed
   --reset-3xui-password     Change only existing panel admin credentials (brief xui stop)
+  --configure-xray         Automatically configure and verify the selected Xray transport
+  --show-client            Show verified VLESS URI only on an interactive terminal
   --backup                 Consistent SQLite/local configuration backup
   --restore /absolute/file.tar.gz
                            Restore same stack identity, preserving current host SSH/UFW
@@ -38,7 +40,7 @@ collect_state() {
     printf 'Select server role:\n1. INBOUND — Russian VPS\n2. OUTBOUND — Foreign VPS\n'
     ask choice Role
     case "$choice" in 1) ROLE=inbound;; 2) ROLE=outbound;; *) die 'Choose 1 or 2';; esac
-    log 'Both roles install the same initial infrastructure. No Xray inbound or route is configured.'
+    log 'Both roles install the VPS stack, then automatically configure the selected VLESS transport.'
     ask ADMIN 'Sudo username' vpsadmin; valid_user "$ADMIN" || die 'Invalid sudo username'
     ask SSH_PORT 'SSH TCP port (existing port is retained during verification)' 22
     valid_port "$SSH_PORT" || die 'Invalid SSH port'
@@ -78,6 +80,13 @@ install_main() {
         collect_state
         load_state
     fi
+    transport_select
+    if [[ $(python3 "$APP/helpers/automation.py" profile-info "$ROOT") == active || -d $ROOT/.transport-transaction ]]; then
+        configure_xray
+        check_stack
+        access_instructions
+        return
+    fi
     # Resolve and warn before package, user, SSH, UFW or Docker changes.
     check_dns
     base_packages
@@ -99,6 +108,7 @@ install_main() {
     install_guard_service
     setup_certificates
     install_backup_timer
+    configure_xray
     check_stack
     state_set phase ready
     access_instructions
@@ -129,7 +139,7 @@ main() {
             [[ $# == 3 ]] || die 'Use --probe-route HOST PORT'
             exec python3 "$APP/helpers/probe.py" "$2" "$3";;
         --restore) [[ $# == 2 ]] || die 'Use --restore /absolute/backup.tar.gz';;
-        ''|--status|--check|--reconfigure|--reset-3xui-password|--reset-3xui-credentials|--backup|--uninstall|--apply-docker-firewall|--renew)
+        ''|--status|--check|--configure-xray|--show-client|--reconfigure|--reset-3xui-password|--reset-3xui-credentials|--backup|--uninstall|--apply-docker-firewall|--renew)
             (( $# <= 1 )) || die 'Unexpected arguments';;
         *) die 'Unknown command; see --help';;
     esac
@@ -138,6 +148,8 @@ main() {
     load_state
     case "$1" in
         --status) status_stack;;
+        --configure-xray) configure_xray;;
+        --show-client) show_client;;
         --check) check_stack;;
         --reconfigure) reconfigure_site;;
         --reset-3xui-password|--reset-3xui-credentials) reset_xui;;

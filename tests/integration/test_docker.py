@@ -1,7 +1,8 @@
 """Real Docker test. Never invokes host installer/sshd/UFW/ACME.
 
 Uses isolated names, networks, high loopback ports and an ephemeral test CA.
-Only the initial infrastructure is tested; no VLESS inbound is created.
+This module tests the initial infrastructure. test_automation.py separately
+creates VLESS inbounds and verifies real authenticated client transfers.
 This is not a Cloudflare or VPS E2E test.
 """
 import copy,hashlib,http.cookiejar,json,os,secrets,shutil,socket,sqlite3,subprocess,sys,time,urllib.parse,urllib.request,uuid

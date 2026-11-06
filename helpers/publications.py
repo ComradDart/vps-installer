@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 import json, subprocess, sys
 
-def check(rows):
+def check(rows,reality=False):
     expected={'vps-xui':{'2053/tcp':{('127.0.0.1','2053')}},
               'vps-nginx':{'80/tcp':{('0.0.0.0','80')},'8443/tcp':{('127.0.0.1','8443')}}}
-    expected['vps-nginx']['8443/tcp'].add(('0.0.0.0','443'))
+    if reality:expected['vps-xui']['443/tcp']={('0.0.0.0','443')}
+    else:expected['vps-nginx']['8443/tcp'].add(('0.0.0.0','443'))
     assert len(rows)==2
     for row in rows:
         name=row['Name'].lstrip('/')
@@ -19,7 +20,7 @@ def check(rows):
         assert row['State'].get('Health',{}).get('Status')=='healthy', 'Container is not healthy'
 if __name__=='__main__':
     try:
-        rows=json.loads(subprocess.check_output(['docker','inspect','vps-xui','vps-nginx'],text=True));check(rows)
+        rows=json.loads(subprocess.check_output(['docker','inspect','vps-xui','vps-nginx'],text=True));check(rows,len(sys.argv)>1 and sys.argv[1]=='direct-reality')
         print('Docker publications/networks/health/privileges: OK')
     except (AssertionError,subprocess.CalledProcessError,KeyError) as e:
         print('Docker exposure check failed: '+str(e),file=sys.stderr);sys.exit(1)

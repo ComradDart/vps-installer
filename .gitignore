@@ -9,3 +9,9 @@ __pycache__/
 *.tar.gz
 *.sha256
 test-results/
+
+/secrets/
+/clients/
+/transport.json
+/automation-report.json
+/.transport-transaction/

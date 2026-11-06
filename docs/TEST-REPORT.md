@@ -1,96 +1,106 @@
-# Отчёт о проверках
+# Отчёт о тестировании
 
-Дата: 6 ноября 2026. Итоговый scope: первичная настройка VPS, nginx + локальный сайт + 3x-ui в Docker. Никаких Xray inbound/clients/транспортов установщик не создаёт.
+Дата: 6 ноября 2026. Scope: VPS baseline + Docker nginx/site/3x-ui и автоматическая
+настройка VLESS через официальный API, включая gRPC/TLS, отдельный REALITY/Vision
+и INBOUND relay с явно заданным OUTBOUND.
 
-Все контейнеры используют latest по требованию заказчика. В момент проверки latest содержал 3x-ui 3.11.0 / Xray 26.10.21 и nginx 1.31.8. Это сведения о проведённом испытании, не закрепление версий.
+Образы остаются **latest**, без pin версии/digest. Во время испытаний:
+3x-ui 3.11.0, Xray 26.10.21, nginx 1.31.8, rootless Docker 29.9.2 / Compose 2.40.3,
+amd64. Это наблюдавшиеся версии, а не закрепление контейнеров.
 
-## PASSED
+## Статус
 
-- Bash syntax для всех Bash файлов.
-- ShellCheck 0.11.0 для entrypoints, lib и test runner, exit 0. Исключения SC2034 документируют межмодульные state flags; SC1090/source обоснованы локальными модулями.
-- 62 unit/negative теста, pytest. DNS/GHCR/daemon/ACME failure здесь инъекции отказа, не реальные внешние проверки.
-- 3 настоящих Docker integration теста, 66.69 секунды: полный последовательный сценарий инфраструктуры и Compose config для обеих ролей.
+- **PASSED:** Bash syntax, ShellCheck и 103 unit/negative теста.
+- **PASSED:** настоящий gRPC/TLS → nginx → Xray data transfer; API creation,
+  повторный запуск без дубликатов и сохранение UUID, проверка port owner/10000.
+- **PASSED:** реальный отказ клиентской передачи → откат файлов/inbound/созданного
+  клиента → успешная повторная попытка с тем же UUID.
+- **PASSED (ранний отдельный прогон):** REALITY/Vision, проверка nginx target и
+  настоящий клиент, повторный запуск. Полный финальный повтор не завершён.
+- **PASSED (предыдущая серия baseline):** 3 Docker-теста инфраструктуры, TLS/HTTP2,
+  reset/SQLite snapshot и Compose для обеих ролей; host lifecycle ими не покрыт.
+- **FAILED — ограничение среды:** финальные повторные Docker-прогоны прекращены
+  с `no space left on device` при пересоздании контейнеров, в том числе при откате.
+  Это не PASSED и не подтверждение полной установки. Приватный transaction journal
+  сохраняется для восстановления после освобождения места.
+- **NOT RUN до конца:** положительный relay/fail-closed сценарий. Его начальная
+  проверка недоступного OUTBOUND выполнялась без локальных API изменений, но
+  дальнейшее создание контейнеров прерывалось из-за диска. Автотест добавлен;
+  полный результат требует среды с достаточным диском.
+- **Cloudflare E2E: NOT RUN.**
 
-- Official CLI bootstrap before server start; bcrypt verification
-- Real 3x-ui and nginx startup and health checks
-- HTTP login with chosen credentials and current CSRF mechanism
-- nginx configuration accepted by actual image
-- CA-verified TLS, domain validation, ALPN and HTTP/2 site GET
-- Real HTTP ACME webroot serving; no certificate issuance claimed
-- Official CLI credential reset, new HTTP login, unchanged non-user tables
-- Previous password rejected after reset
-- Repeated rendering/up preserves custom site, credentials and empty initial inbound list
-- Consistent SQLite snapshot and recovery verified with live panel settings
-- Chosen old/new passwords absent from normal Docker logs
-- Actual PortBindings: loopback panel, no public gRPC port, no added capabilities
+На момент коммита нет единого полностью прошедшего финального Docker-прогона.
+Нельзя считать REALITY/relay и всю VPS установку полностью проверенными.
 
-## FAILED
+## Что проверяют автоматические тесты
 
-В финальном сокращённом наборе отсутствуют. До уточнения scope разрабатывался отдельный gRPC E2E; он не был завершён и исключён вместе с транспортными модулями. Работа gRPC/REALITY не заявляется и не входит в итоговый установщик.
+- Официальный CLI инициализирует администратора до запуска; bcrypt и настоящий HTTP
+  login с CSRF подтверждают credentials. Reset проверяется отдельно; остальные
+  таблицы и настройки сохраняются. API-токен проверяется реальным запросом.
+- Через работающий API создаётся VLESS gRPC inbound: 10000, 0.0.0.0, enable,
+  security none, decryption none, пустой flow, serviceName vlessgrpc.
+- Реальный nginx принимает TLS с доверенной одноразовой CA, ALPN h2, обслуживает
+  сайт и передаёт /vlessgrpc/Tun в grpc://xui:10000. Отдельный настоящий Xray-клиент
+  передаёт HTTP-данные через VLESS; HTTP 200 сайта не используется как доказательство.
+- REALITY: официальная генерация X25519 keys, собственный serverName, Vision,
+  проверка nginx self-steal target из Xray и настоящий клиентский обмен.
+- Повторный запуск сохраняет inbound id и UUID, не создаёт дубликатов. Unit-тест
+  проверяет восстановление UUID из API при потере локального cache и отказ при
+  конфликтующем/изменённом inbound или чужом клиенте.
+- Actual Docker PortBindings: единственный владелец публичного тестового TLS-порта,
+  отсутствие публикации TCP/10000, закрытая панель; UDP/80 и UDP/443 запрещены.
+- Кандидаты Compose и nginx проходят реальные проверки до применения.
+- Ошибка настоящего клиентского transfer откатывает файлы, созданный inbound и
+  принадлежащего транзакции непривязанного клиента. Повторная попытка использует тот же UUID.
+- Relay сначала проверяет заданный OUTBOUND настоящим клиентом. Недоступный peer не
+  меняет local inbound/template. Рабочий peer выдаёт отличимый выходной ответ;
+  после его остановки передача прекращается, direct fallback отсутствует.
+- Секреты отсутствуют в обычных Docker logs; API errors не раскрывают тела ответов.
+- Baseline: TLS/HTTP2 сайта, точные ACME bytes через HTTP и HTTPS, persistent DB/site,
+  reset credentials и восстановление настоящего SQLite snapshot.
+- Bash syntax / ShellCheck; schema validation, DNS/proxy, SSH proof parsing,
+  fail2ban readiness, безопасная распаковка и отрицательные сценарии.
 
-## NOT RUN
+## Условия и ограничения
 
-- Полная root установка на настоящих Debian 12, Debian 13, Ubuntu 24.04 LTS.
-- Реальная конфигурация SSH/Ubuntu ssh.socket, проверка новых внешних сессий и таймера rollback.
-- Host UFW/fail2ban/DOCKER-USER, external IPv4/IPv6 port scan.
-- Настоящий DNS/Let's Encrypt HTTP-01/renew --dry-run и публичная цепочка.
-- Полный архивный --restore, миграция legacy-сервисов и --uninstall на VPS.
-- Full OS reboot, unattended upgrades и chrony на VPS.
-- arm64.
+Это **контейнерные интеграционные тесты, не две полноценные VM**. Имена/сети изолированы,
+порты высокие и loopback. Host SSH/UFW/systemd/apt не меняются. Тестовая CA проверяется
+нормальным способом, без curl -k. Для частного HTTP fixture добавляется точечное
+исключение из private-IP guard только внутри теста; production template не ослабляется.
 
-## MANUAL
+В rootless песочнице xui запускается под UID тестера с writable копией bin. Для
+отдельного тестового OUTBOUND и reference client официальный Xray-бинарник запускается в лёгком
+nginx:latest контейнере с отдельным конфигом: это экономит VFS-диск. Production
+xui использует штатный container root с cap_drop ALL, без таких fixture-модификаций.
 
-Последовательность дана в MANUAL-TEST.md. Требуется отдельная тестовая VPS с snapshot и консолью провайдера. Это тестовый кандидат; production readiness не заявляется.
+Разработка обнаружила и устранила оставшуюся после удаления inbound запись клиента
+в 3.11.0. Параллельные, а затем и последовательные повторные Docker-прогоны завершались
+ошибкой нехватки диска VFS; они не учитываются как PASSED. После освобождения
+места требуется повторить полный набор в более вместительной среде.
+Ранее apt simulation Ubuntu 26.04 не прошла из-за TLS trust прокси среды: успешная
+установка пакетов на этой ОС этим не доказана.
 
-## Условия контейнерного теста
+## NOT RUN / MANUAL
 
-Rootless Docker 29.9.2 / Compose 2.40.3, Debian 13 managed environment, amd64. Использовались отдельные имена/сеть и высокие loopback порты. Host firewall/sshd не менялись. В rootless среде xui запускался под UID тестера с writable копией /app/bin; production Compose запускает его под штатным container root без capabilities. Приватный ключ одноразового тестового CA был доступен только внутри тестовой папки; реальные deploy права TLS проверяются вручную.
+- **Внешний Cloudflare E2E: NOT RUN.** Нет предоставленной зоны/публичного origin
+  и настоящего сертификата для этого теста. В pytest задан явный skip с этой причиной;
+  origin PASSED не подменяет внешний E2E. На VPS установка требует и origin, и
+  настоящий публичный VLESS-сеанс перед объявлением готовности.
+- Полная установка с нуля на Debian 12/13, Ubuntu 24.04/26.04 LTS, arm64.
+- Реальные внешние SSH-сессии, ssh.socket, UFW/DOCKER-USER/fail2ban, сканирование
+  портов, reboot и chrony/unattended upgrades на VPS.
+- Публичный Let's Encrypt HTTP-01 и renew --dry-run.
+- Полный архивный --restore, legacy migration и --uninstall на VPS.
 
-TLS проверялся через временный доверенный CA и hostname, без curl -k. Наличие выбранных паролей в normal Docker logs отдельно проверено; секреты в state/.env не писались. Snapshot SQLite был реально восстановлен и прочитан работающей панелью. Это не доказательство полного архивного --restore.
+Порядок ручной проверки: [MANUAL-TEST.md](MANUAL-TEST.md).
 
-Архивный backup/restore защищён owner/mode/sha256/path checks и имеет негативный unit test недоверенного архива, но полный root lifecycle требует VPS. Не выдавайте mocks за E2E.
+## Воспроизведение
 
-## Обновление: Ubuntu 26.04 и установка без Git
+```bash
+./tests/run.sh
+RUN_DOCKER_INTEGRATION=1 ./tests/run.sh
+```
 
-- Добавлен Ubuntu 26.04 LTS (включая образ 26.04.1 с VERSION_ID=26.04).
-- Проверены официальная документация Docker и доступность Release для resolute.
-- 78 unit/negative тестов проходят: добавлены матрица ОС, диагностика версии,
-  безопасная распаковка bootstrap и cleanup при отказе.
-- get.sh скачивает main по HTTPS через curl/wget без Git, проверяет структуру архива,
-  ставит только отсутствующие bootstrap prerequisites и запускает текущий install.sh.
-- Для fail2ban backend=systemd явно добавлен python3-systemd (recommends не устанавливаются).
-- Standalone download/vps_setup.sh пересобран с текущим кодом и проверен распаковкой.
-- Полная установка SSH/UFW/ACME на Ubuntu 26.04 остаётся MANUAL; прежняя серия
-  трёх Docker integration тестов относится к инфраструктуре, а не полной ОС.
-- FAILED (ограничение тестовой среды): apt simulation в контейнере Ubuntu 26.04.1
-  не завершилась из-за доверия к TLS-сертификату прокси песочницы. Это не успешная
-  проверка установки пакетов; реальное развёртывание на Ubuntu 26.04 остаётся MANUAL.
-
-## Обновление: readiness fail2ban
-
-- Вместо мгновенного status sshd после restart проверяются socket ping и готовность
-  jail с ожиданием до 30 секунд. Служба запускается одним restart после enable.
-- При failed state или timeout выводятся systemctl status, journal и fail2ban.log;
-  ошибка не игнорируется и установка не продолжается без SSH jail.
-- 4 новых unit-теста: задержка сокета, задержка jail, падение службы и timeout.
-  Итого 82 unit-теста. Реальная служба на VPS требует повторной проверки.
-
-## Обновление: proxy DNS и HAHA BENIS playground
-
-- DNS preflight перенесён до пакетов/SSH/UFW/Docker. Прокси-адреса могут отличаться
-  от origin; обязательная проверка публичного случайного ACME-файла сохранена.
-- ACME path доступен и через HTTPS; публичная проверка следует HTTP/HTTPS redirects
-  с нормальной проверкой TLS. Первый redirect к origin без сертификата всё ещё
-  требует исключения в Cloudflare или временного DNS only.
-- 88 unit/negative тестов проходят, включая proxy A/AAAA, отсутствие DNS,
-  IPv4-only direct origin и отказ до вызова системных пакетов.
-- Новые локальные HTML/CSS/JS: глитчи, CRT/canvas, орбиты, терминал, рандомайзер,
-  WARP, кнопка хаоса, счётчик кликов браузера и отключение эффектов.
-- Chromium/Playwright: проверены desktop 1440px и mobile 390px, отсутствие
-  горизонтального overflow, кнопки WARP/рандомайзер/хаос, клавиатурная ручка настройки,
-  pause/persistence и reduced motion. Нет JavaScript exceptions и внешних запросов.
-- Site-only renderer отдельно проверен: Compose, nginx configs, БД и другие файлы сайта
-  остаются нетронутыми при --reconfigure. Код приложения обновляется после backup.
-- Повторный Docker integration: 3 PASSED (62.49 s), включая выдачу одного и того же
-  ACME nonce по HTTP и HTTPS с проверкой тестовой CA-цепочки; полный Cloudflare/LE E2E
-  на VPS остаётся MANUAL.
+Зависимости перечислены в tests/requirements.txt; ShellCheck также нужен.
+Тесты создают только свои Docker-ресурсы и удаляют их при завершении.
+Для VFS нужен достаточный свободный диск; одновременные прогоны не рекомендуются.

@@ -5,7 +5,7 @@ OUT.mkdir(exist_ok=True)
 buf=io.BytesIO()
 with tarfile.open(fileobj=buf,mode='w:gz') as tar:
  for p in sorted(P.rglob('*')):
-  if not p.is_file() or any(x in ('__pycache__','.pytest_cache','.venv','.git','download') for x in p.parts) or p.suffix=='.pyc':continue
+  if not p.is_file() or any(x in ('__pycache__','.pytest_cache','.venv','.git','download','secrets','clients','.transport-transaction','test-results') for x in p.parts) or p.suffix in ('.pyc','.pem','.key','.db','.sha256') or p.name in ('.env','state.json','transport.json','automation-report.json'):continue
   info=tar.gettarinfo(str(p),arcname='vps-installer/'+str(p.relative_to(P)))
   info.uid=info.gid=0;info.uname=info.gname='root';info.mode=0o755 if p.suffix=='.sh' else 0o644
   with p.open('rb') as f:tar.addfile(info,f)

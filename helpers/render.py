@@ -2,6 +2,7 @@
 import html, json, os, sys, tempfile
 from pathlib import Path
 from state import validate
+from transport_profile import profile
 
 def atomic(path,text,mode=0o644):
     fd,tmp=tempfile.mkstemp(prefix='.render-',dir=path.parent)
@@ -21,7 +22,9 @@ def render(state,root,templates):
     (root/'acme/.well-known/acme-challenge').mkdir(parents=True,exist_ok=True)
     for p in (root/'acme',root/'acme/.well-known',root/'acme/.well-known/acme-challenge'):p.chmod(0o755)
     # Parent /opt/vps-installer remains 0700; bind-mounted paths have their own access.
-    tokens={'ROOT':str(root),'DOMAIN':d['domain'],'SUBNET':d['subnet'],
+    managed=profile(root);reality=bool(managed and managed['active'] and managed['mode']=='direct-reality')
+    tokens={'XUI_PUBLIC_TLS':"      - '0.0.0.0:443:443/tcp'" if reality else '',
+            'NGINX_PUBLIC_TLS':'' if reality else "      - '0.0.0.0:443:8443/tcp'",'ROOT':str(root),'DOMAIN':d['domain'],'SUBNET':d['subnet'],
             'XUI_IMAGE':d['xui_image'],'NGINX_IMAGE':d['nginx_image'],
             'TITLE':html.escape(d['title']), 'TEXT':html.escape(d['text'])}
     def subst(text):
@@ -50,6 +53,10 @@ def tls(state,root,templates):
     assert (root/'tls/fullchain.pem').is_file() and (root/'tls/privkey.pem').is_file(), 'TLS files missing'
     text=(templates/'tls.conf').read_text()
     text=text.replace('@@DOMAIN@@',d['domain'])
+    managed=profile(root)
+    if managed and managed['active'] and managed['mode']!='direct-reality':
+        atomic(root/'conf.d/vps-grpc.inc',(templates/'grpc.inc').read_text())
+        text=text.replace('server_name '+d['domain']+';', 'server_name '+d['domain']+';\n    include /etc/nginx/conf.d/vps-grpc.inc;')
     atomic(root/'conf.d/tls.conf',text)
 if __name__=='__main__':
     try:

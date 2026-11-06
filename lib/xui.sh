@@ -33,7 +33,14 @@ xui_cli_credentials() {
     # and still return 0. Verify the actual first-user bcrypt hash in the same DB.
     printf '%s\n%s\n' "$PANEL_USER" "$PANEL_PASSWORD" | python3 "$APP/helpers/db.py" verify "$ROOT/db/x-ui.db"
 }
+check_xui_image_contract() {
+    local version
+    version=$(docker run --rm --network none --log-driver none --entrypoint /app/x-ui "$XUI_IMAGE" -v)
+    [[ $version == 3.11.0 || $version == v3.11.0 ]] || die 'latest 3x-ui has an unreviewed API contract. Running inbound configuration was not changed.'
+}
 setup_xui() {
+    check_xui_image_contract
+    local fresh=no
     if [[ -s $ROOT/db/x-ui.db ]]; then
         python3 "$APP/helpers/db.py" integrity "$ROOT/db/x-ui.db"
     fi
@@ -41,13 +48,17 @@ setup_xui() {
         panel_credentials
         # Fail closed: never start the normal server after unsuccessful initialization.
         xui_cli_credentials initial
-        unset PANEL_PASSWORD PANEL_USER
+        fresh=yes
     else
         python3 "$APP/helpers/db.py" integrity "$ROOT/db/x-ui.db"
         log 'Existing 3x-ui database preserved; credentials are not changed'
     fi
     compose up -d xui
     wait_healthy vps-xui
+    if [[ $fresh == yes ]]; then
+        printf '%s\n%s\n' "$PANEL_USER" "$PANEL_PASSWORD" | python3 "$APP/helpers/automation.py" login-check "$ROOT"
+        unset PANEL_PASSWORD PANEL_USER
+    fi
 }
 reset_xui() {
     require_docker

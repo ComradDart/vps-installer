@@ -9,7 +9,10 @@ status_stack() {
 check_stack() {
     require_docker
     compose config --quiet
-    python3 "$APP/helpers/publications.py"
+    [[ -s $ROOT/transport.json ]] || die 'No managed transport selected; run --configure-xray first'
+    local mode
+    mode=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["mode"])' "$ROOT/transport.json")
+    python3 "$APP/helpers/publications.py" "$mode"
     python3 "$APP/helpers/db.py" integrity "$ROOT/db/x-ui.db"
     docker exec vps-nginx nginx -t
     ssh_effective
@@ -28,6 +31,7 @@ check_stack() {
         -w '%{http_version}\n' | rg -qx 2 || die 'Origin HTTP/2 HTTPS check failed'
     python3 "$APP/helpers/listeners.py" "$SSH_PORT"
     systemctl is-active --quiet vps-installer-renew.timer vps-installer-backup.timer
+    python3 "$APP/helpers/automation.py" check "$ROOT"
     # Evaluate effective unattended-upgrades configuration without upgrading packages.
     unattended-upgrade --dry-run >/dev/null
     warn 'MANUAL: external scan of SSH/HTTPS and closed panel ports; actual VPS restore and renewal test.'
@@ -36,5 +40,5 @@ check_stack() {
 access_instructions() {
     log "HTTPS site: https://$DOMAIN/"
     log "Panel: ssh -N -L 2053:127.0.0.1:2053 -p $SSH_PORT $ADMIN@$PUBLIC_IP"
-    log 'Then browse http://127.0.0.1:2053/ . Configure any Xray inbounds yourself.'
+    log 'Then browse http://127.0.0.1:2053/ . Verified device URI: use --show-client.'
 }

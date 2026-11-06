@@ -1,7 +1,8 @@
 # Аудит исходного vps_setup.sh
 
-Итоговый scope уточнён заказчиком: только первичная VPS + Docker nginx/site/3x-ui.
-Все контейнеры latest; настройка Xray inbound и маршрутов исключена.
+Первичный аудит относился к VPS + Docker nginx/site/3x-ui. Последующее обязательное
+требование добавило автоматическую настройку VLESS через API; она описана в
+ARCHITECTURE.md и TEST-REPORT.md. Все развёртываемые контейнеры остаются latest.
 
 Проверен весь оригинал, присланный в сообщении после ТЗ: общая часть, OUTBOUND,
 INBOUND, reset/uninstall, ACME, HTML/CSS/JS, counter и refresh-tg-ranges.
