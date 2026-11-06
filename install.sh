@@ -21,6 +21,7 @@ Usage: sudo ./install.sh [command]
   --help                   Show help (no root/mutations needed)
   --status                 Show saved state, containers, sockets, timers
   --check                  Verify infrastructure and real authenticated VLESS transfer
+  --check-xray             Verify Xray API, ports and real VLESS transfer only
   --reconfigure            Explicitly update site title/text; other identity stays fixed
   --reset-3xui-password     Change only existing panel admin credentials (brief xui stop)
   --configure-xray         Automatically configure and verify the selected Xray transport
@@ -140,7 +141,7 @@ main() {
             [[ $# == 3 ]] || die 'Use --probe-route HOST PORT'
             exec python3 "$APP/helpers/probe.py" "$2" "$3";;
         --restore) [[ $# == 2 ]] || die 'Use --restore /absolute/backup.tar.gz';;
-        ''|--status|--check|--configure-xray|--migrate-inbound-reality|--show-client|--reconfigure|--reset-3xui-password|--reset-3xui-credentials|--backup|--uninstall|--apply-docker-firewall|--renew)
+        ''|--status|--check|--check-xray|--configure-xray|--migrate-inbound-reality|--show-client|--reconfigure|--reset-3xui-password|--reset-3xui-credentials|--backup|--uninstall|--apply-docker-firewall|--renew)
             (( $# <= 1 )) || die 'Unexpected arguments';;
         *) die 'Unknown command; see --help';;
     esac
@@ -153,6 +154,7 @@ main() {
         --migrate-inbound-reality) migrate_inbound_reality;;
         --show-client) show_client;;
         --check) check_stack;;
+        --check-xray) require_docker; python3 "$APP/helpers/automation.py" check "$ROOT";;
         --reconfigure) reconfigure_site;;
         --reset-3xui-password|--reset-3xui-credentials) reset_xui;;
         --backup) backup_stack;;

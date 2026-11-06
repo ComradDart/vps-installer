@@ -182,6 +182,13 @@ sudo bash vps-bootstrap.sh --reconfigure
 прежними нажатием Enter. Установщик предварительно делает backup.
 
 
+Клиентский адрес — домен VPS, а не `localhost`: для экспорта из панели установщик
+задаёт `shareAddrStrategy=custom` и `shareAddr=ваш_домен`. Ссылка `--show-client` тоже
+содержит домен явно. Открытие панели через локальный SSH-туннель не должно менять
+адрес устройства. Адрес прослушивания сервера внутри контейнера остаётся `0.0.0.0`.
+Переименование inbound в панели допустимо: он находится по сохранённым ID и UUID,
+а не по отображаемому названию.
+
 Панель публикуется **только на 127.0.0.1:2053 хоста**. Доступ с вашего компьютера:
 
 ```bash
@@ -281,6 +288,7 @@ transport/security, REALITY public key и shortId отличаются от пр
 sudo /opt/vps-installer/app/install.sh --show-client
 sudo /opt/vps-installer/app/install.sh --status
 sudo /opt/vps-installer/app/install.sh --check
+sudo /opt/vps-installer/app/install.sh --check-xray
 sudo /opt/vps-installer/app/install.sh --backup
 sudo /opt/vps-installer/app/install.sh --reset-3xui-password
 sudo /opt/vps-installer/app/install.sh --reconfigure
@@ -294,6 +302,8 @@ sudo /opt/vps-installer/app/install.sh --reconfigure
   пакетов этой проверкой. Полный stdout/stderr хранится в root-only
   `/opt/vps-installer/unattended-upgrade-check.log`; в терминале показывается итог,
   при ошибке — последние строки лога и остановка.
+- `--check-xray`: только API/портовые привязки и настоящая передача VLESS, с отдельными
+  этапами internal/public; без запуска проверки автообновлений и прочих host checks.
 - `--reset-3xui-password`: backup, краткая остановка только xui, официальный CLI,
   bcrypt verify, сравнение остальных таблиц. Весь стек не пересоздаётся, 2FA не сбрасывается.
 - `--reconfigure`: только title/текст сайта, с backup и согласием на замену index/style/app.

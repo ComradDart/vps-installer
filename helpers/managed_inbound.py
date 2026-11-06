@@ -46,6 +46,7 @@ def payload(state,profile,cache):
         stream={'network':'tcp','security':'reality','realitySettings':{'show':False,'target':'nginx:8443','xver':0,'serverNames':[state['domain']],'privateKey':cache['private_key'],'shortIds':[cache['short_id']],'settings':{'publicKey':cache['public_key'],'fingerprint':'chrome','serverName':state['domain'],'spiderX':'/'}}}
     else:stream={'network':'grpc','security':'none','grpcSettings':{'serviceName':SERVICE,'multiMode':False}}
     return {'up':0,'down':0,'total':0,'remark':marker(state,profile),'enable':True,'expiryTime':0,'listen':'0.0.0.0','port':443 if reality else 10000,'protocol':'vless',
+            'shareAddrStrategy':'custom','shareAddr':state['domain'],
             'settings':json.dumps({'clients':[client],'decryption':'none'}),'streamSettings':json.dumps(stream),'sniffing':json.dumps({'enabled':False,'destOverride':['http','tls']})}
 
 def validate_existing(row,state,profile,cache):
@@ -61,10 +62,24 @@ def validate_existing(row,state,profile,cache):
     if not row.get('tag'):raise SetupError('API did not return an inbound tag')
     return row
 
+def owned_inbound(rows,state,profile,cache):
+    """Remark is a mutable display name; ownership uses the saved ID and client UUID."""
+    def contains(row):return any(c.get('id')==cache['uuid'] for c in decoded(row,'settings').get('clients',[]))
+    identified=[r for r in rows if contains(r)]
+    saved=cache.get('inbound_id')
+    if saved is not None:
+        matches=[r for r in identified if r['id']==saved]
+        if len(matches)==1:return matches[0]
+        if identified:raise SetupError('Saved UUID belongs to a different inbound ID; no configuration was guessed')
+    else:
+        if len(identified)==1:return identified[0]
+        if len(identified)>1:raise SetupError('Saved UUID occurs in multiple inbounds; saved inbound ID is required')
+    if any(r.get('remark')==marker(state,profile) for r in rows):raise SetupError('Managed name exists but its saved client UUID is missing; clients were preserved')
+    return None
+
 def ensure(api,state,profile,cache):
-    rows=api.inbounds();owned=[r for r in rows if r.get('remark')==marker(state,profile)]
-    if len(owned)>1:raise SetupError('Duplicate managed inbounds detected; refusing destructive repair')
-    if owned:return validate_existing(owned[0],state,profile,cache),False
+    rows=api.inbounds();owned=owned_inbound(rows,state,profile,cache)
+    if owned:return validate_existing(owned,state,profile,cache),False
     port=443 if profile['mode']=='direct-reality' else 10000
     if any(int(r['port'])==port for r in rows):raise SetupError('Port '+str(port)+' already belongs to an unmanaged inbound. Existing configuration was preserved.')
     if any(c['email']==cache['email'] for c in api.clients()):raise SetupError('Managed test-client email already exists outside this inbound; existing client was preserved')
@@ -90,4 +105,12 @@ def relay_template(template,inbound_tag,peer):
     conflicts=[r for r in rules if inbound_tag in r.get('inboundTag',[]) and r!=expected]
     if conflicts:raise SetupError('Conflicting route for the managed inbound; direct fallback not applied')
     result['routing']['rules']=[expected]+[r for r in rules if r!=expected]
+    return result
+
+
+def share_address_patch(row,state):
+    """Make panel-generated device links independent of the SSH-tunnel Host header."""
+    if row.get('shareAddrStrategy')=='custom' and row.get('shareAddr')==state['domain']:return None
+    result=copy.deepcopy(row)
+    result.update(shareAddrStrategy='custom',shareAddr=state['domain'])
     return result

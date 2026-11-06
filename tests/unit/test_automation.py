@@ -42,6 +42,7 @@ def test_conflicts_preserved(tmp_path):
     api.rows[0]['port']=12345
     with pytest.raises(SetupError,match='differs'):ensure(api,state,p,cache)
     api.rows[0]['remark']='user-managed';api.rows[0]['port']=10000
+    data=decoded(api.rows[0],'settings');data['clients'][0]['id']=str(uuid.uuid4());api.rows[0]['settings']=json.dumps(data)
     with pytest.raises(SetupError,match='unmanaged'):ensure(api,state,p,cache)
     assert len(api.rows)==1
 

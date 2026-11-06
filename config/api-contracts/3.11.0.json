@@ -14,5 +14,6 @@
   "client_get": "GET /panel/api/clients/get/:email",
   "client_delete": "POST /panel/api/clients/del/:email (only transaction-owned unattached identity)",
   "inbound_update": "POST /panel/api/inbounds/update/:id (JSON model.Inbound; preserves stored clients; auto tags can change with port)",
-  "client_update": "POST /panel/api/clients/update/:email?inboundIds=ID (JSON model.Client + limitHwid; used for Vision flow)"
+  "client_update": "POST /panel/api/clients/update/:email?inboundIds=ID (JSON model.Client + limitHwid; used for Vision flow)",
+  "share_address": "model.Inbound shareAddrStrategy=custom, shareAddr=public domain; independent of listen; update uses official inbound update endpoint"
 }

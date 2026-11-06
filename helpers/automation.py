@@ -5,7 +5,7 @@ from pathlib import Path
 from state import validate
 from xui_api import Api,Docker,SetupError,authenticated_api,private_json,private_text,verify_login
 from transport_profile import profile,validate_profile,parse_peer,client_config,client_uri
-from managed_inbound import SERVICE,decoded,marker,planned_cache,ensure,validate_existing,peer_for_client,relay_template
+from managed_inbound import SERVICE,decoded,marker,planned_cache,ensure,validate_existing,peer_for_client,relay_template,share_address_patch,owned_inbound
 from xray_probe import probe
 
 GRPC=(Path(__file__).resolve().parents[1]/'templates/grpc.inc').read_text()
@@ -136,6 +136,15 @@ class Engine:
             return
         journal=json.loads(path.read_text());cache_path=self.root/'secrets/managed-xray.json'
         cache=json.loads(cache_path.read_text()) if cache_path.exists() else {}
+        sharing=journal.get('share_address')
+        if sharing:
+            rows=[r for r in self.api.inbounds() if r['id']==sharing['id']]
+            if len(rows)!=1:raise SetupError('Inbound disappeared during share-address recovery; journal retained')
+            current=rows[0]
+            for key in ('shareAddrStrategy','shareAddr'):
+                if current.get(key) not in (sharing['before'].get(key),sharing['after'][key]):raise SetupError('Concurrent share-address edit detected; journal retained')
+            restored=dict(current,**sharing['before'])
+            self.api.request('/panel/api/inbounds/update/'+str(current['id']),restored)
         if journal.get('migration'):
             from reality_migration import restore
             if journal['migration']['original'] is not None:restore(self.api,journal['migration'])
@@ -199,7 +208,7 @@ class Engine:
         try:
             journal['original_ids']=[r['id'] for r in self.api.inbounds()]
             journal['original_client_emails']=[c['email'] for c in self.api.clients()]
-            journal['attempted_create']=not any(r.get('remark')==marker(self.state,self.profile) for r in self.api.inbounds());self.save_journal(journal)
+            journal['attempted_create']=owned_inbound(self.api.inbounds(),self.state,self.profile,cache) is None;self.save_journal(journal)
             if migration:
                 journal['original_profile']=migration['original_profile']
                 journal['migration']=migration
@@ -212,6 +221,16 @@ class Engine:
                     row=apply(self.api,migration);created=False
                 validate_existing(row,self.state,self.profile,cache)
             else:row,created=ensure(self.api,self.state,self.profile,cache)
+            if not created and migration is None:
+                adjusted=share_address_patch(row,self.state)
+                if adjusted:
+                    fields=('shareAddrStrategy','shareAddr')
+                    journal['share_address']={'id':row['id'],'before':{k:row.get(k,'node' if k=='shareAddrStrategy' else '') for k in fields},'after':{k:adjusted[k] for k in fields}}
+                    self.save_journal(journal)
+                    self.api.request('/panel/api/inbounds/update/'+str(row['id']),adjusted)
+                    row=next(r for r in self.api.inbounds() if r['id']==row['id'])
+                    if any(row.get(k)!=adjusted[k] for k in fields):raise SetupError('Panel API did not retain the public share address; rolling back')
+                    validate_existing(row,self.state,self.profile,cache)
             journal['created_id']=row['id'] if created else None;self.save_journal(journal)
             cache['inbound_id']=row['id'];private_json(self.root/'secrets/managed-xray.json',cache)
             changed=created or migration is not None
@@ -272,9 +291,17 @@ def main():
         cache_path=root/'secrets/managed-xray.json'
         if not cache_path.exists():raise SetupError('Managed client identity is missing; run --configure-xray to recover it through the API')
         cache=json.loads(cache_path.read_text())
-        rows=api.inbounds();row=next((r for r in rows if r.get('remark')==marker(engine.state,engine.profile)),None)
-        if row is None:raise SetupError('Managed inbound is missing')
-        validate_existing(row,engine.state,engine.profile,cache);engine.actual_bindings();engine.verify_internal(cache);engine.verify_public(cache)
+        rows=api.inbounds();row=owned_inbound(rows,engine.state,engine.profile,cache)
+        if row is None:
+            if any(r['id']==cache.get('inbound_id') for r in rows):raise SetupError('Saved inbound ID exists, but its saved test-client UUID is missing; current clients were preserved')
+            raise SetupError('Managed inbound is missing')
+        validate_existing(row,engine.state,engine.profile,cache);engine.actual_bindings()
+        print('Saved inbound ID/UUID and Docker publications: OK',flush=True)
+        print('Checking internal VLESS connection through the selected route...',flush=True)
+        engine.verify_internal(cache)
+        print('Internal VLESS connection: PASSED',flush=True)
+        print('Checking VLESS connection through the public server address...',flush=True)
+        engine.verify_public(cache)
         print('Xray API, inbound, Docker publication and real authenticated client transfer: PASSED');return
     result=engine.provision(public=True,migrate=args.command=='migrate-inbound-reality');print('Automatic Xray configuration verified; inbound id '+str(result['inbound_id'])+'. Client secrets saved under '+str(root/'clients'))
 

@@ -1,13 +1,13 @@
 """In-place conversion of an installer-owned INBOUND to REALITY/Vision."""
 import copy,json,re,secrets,urllib.parse
-from managed_inbound import decoded,marker,payload,validate_existing
+from managed_inbound import decoded,marker,payload,validate_existing,owned_inbound
 from xui_api import SetupError,private_json
 
 
 def select_row(api,state,profile,cache):
-    rows=[r for r in api.inbounds() if r.get('remark')==marker(state,profile)]
-    if len(rows)!=1:raise SetupError('Expected one managed INBOUND for migration; nothing overwritten')
-    row=validate_existing(rows[0],state,profile,cache)
+    selected=owned_inbound(api.inbounds(),state,profile,cache)
+    if selected is None:raise SetupError('Expected one managed INBOUND for migration; nothing overwritten')
+    row=validate_existing(selected,state,profile,cache)
     if cache.get('inbound_id',row['id'])!=row['id']:raise SetupError('Managed inbound identity changed; migration refused')
     return row
 
@@ -17,8 +17,8 @@ def plan(root,api,state,profile,cache):
     if profile['mode']=='direct-reality':return None
     if profile['mode']!='direct-grpc':raise SetupError('Only a managed direct-grpc INBOUND can be migrated')
     rows=api.inbounds()
-    owned=[r for r in rows if r.get('remark')==marker(state,profile)]
-    original=select_row(api,state,profile,cache) if owned else None
+    owned=owned_inbound(rows,state,profile,cache)
+    original=validate_existing(owned,state,profile,cache) if owned else None
     if original is None:
         if any(c.get('uuid')==cache['uuid'] or c.get('email')==cache['email'] for c in api.clients()):
             raise SetupError('Saved client still exists without the managed inbound; it was preserved. Remove no data; inspect client membership before retrying.')
@@ -41,7 +41,8 @@ def plan(root,api,state,profile,cache):
     newcache=dict(cache,mode='direct-reality',**{k:keys[k] for k in ('private_key','public_key','short_id')})
     desired=copy.deepcopy(original) if original else payload(state,target,newcache)
     spec=payload(state,target,newcache)
-    for key in ('port','listen','protocol','remark','streamSettings'):desired[key]=spec[key]
+    for key in ('port','listen','protocol','remark','streamSettings','shareAddrStrategy','shareAddr'):desired[key]=spec[key]
+    if original and original.get('remark')!=marker(state,profile):desired['remark']=original['remark']
     desired['disableFlow']=False
     # Client updates use the official clients API: 3.11.0 ignores clients in updateInbound.
     # Keep settings/IDs/limits and the tag exactly as read; the tag owns the relay rule.
@@ -53,7 +54,7 @@ def compatible(current,migration):
     """Allow only the known intermediate states; never overwrite concurrent user edits."""
     before=migration['original'];after=migration['desired']
     if current.get('tag') not in (before['tag'],migration['temporary_tag']):return False
-    for key in ('port','listen','protocol','remark','enable','expiryTime'):
+    for key in ('port','listen','protocol','remark','enable','expiryTime','shareAddrStrategy','shareAddr'):
         if current.get(key) not in (before.get(key),after.get(key)):return False
     for key in ('streamSettings','sniffing'):
         if decoded(current,key) not in (decoded(before,key),decoded(after,key)):return False

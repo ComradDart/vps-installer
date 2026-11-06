@@ -10,7 +10,7 @@ amd64. Это наблюдавшиеся версии, а не закрепле�
 
 ## Статус
 
-- **PASSED:** Bash syntax, ShellCheck и 138 unit/negative тестов.
+- **PASSED:** Bash syntax, ShellCheck и 149 unit/negative тестов.
 - **PASSED:** настоящий gRPC/TLS → nginx → Xray data transfer; API creation,
   повторный запуск без дубликатов и сохранение UUID, проверка port owner/10000.
 - **PASSED:** реальный отказ клиентской передачи → откат файлов/inbound/созданного
@@ -204,3 +204,17 @@ cache, без изменения OUTBOUND-профиля. Конфликт по�
   находится даже когда на диске пока сохранён старый gRPC profile.
 - Полный Docker/VPS/Cloudflare E2E этой ветки **NOT RUN**: заполненный диск среды
   остаётся ограничением. Результаты предыдущих отдельных проверок его не заменяют.
+
+## Адрес экспорта и переименование (7 ноября 2026, Москва)
+
+- **PASSED:** 149 unit/negative тестов, Bash syntax и ShellCheck.
+- Создаваемые и мигрируемые inbound явно задают custom share address = домену
+  state. Listen остаётся 0.0.0.0. Проверены оба экспорта (panel metadata и VLESS URI),
+  идемпотентный ремонт metadata, сохранение клиентов/порта и откат share address.
+- Ownership больше не зависит от remark: сохранённые id/UUID подтверждают renamed
+  inbound. Проверены отсутствие дубля, сохранение пользовательского имени при
+  миграции, отказ при чужом UUID/перенесённом id и отдельный путь --check-xray.
+- --check-xray показывает этапы API/publications, internal transfer и public transfer.
+  Подмена этих шагов host hardening/apt-проверками исключена unit-сценарием.
+- Это unit-проверки и файловая модель API, не новый Docker/VPS/Cloudflare E2E.
+  Полный E2E этой версии **NOT RUN** из-за прежнего ограничения диска среды.
