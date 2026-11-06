@@ -255,6 +255,10 @@ sudo /opt/vps-installer/app/install.sh --reconfigure
 - `--check`: реальная публикация Docker ports, health, nginx, БД, SSH effective config,
   UFW+DOCKER-USER, fail2ban SSH, время, сертификат, origin TLS/HTTP2, timers, API и
   настоящий VLESS-сеанс с проверкой выходного IP (через Cloudflare в соответствующем режиме).
+- Проверка security updates — `unattended-upgrade --dry-run`: симуляция без установки
+  пакетов этой проверкой. Полный stdout/stderr хранится в root-only
+  `/opt/vps-installer/unattended-upgrade-check.log`; в терминале показывается итог,
+  при ошибке — последние строки лога и остановка.
 - `--reset-3xui-password`: backup, краткая остановка только xui, официальный CLI,
   bcrypt verify, сравнение остальных таблиц. Весь стек не пересоздаётся, 2FA не сбрасывается.
 - `--reconfigure`: только title/текст сайта, с backup и согласием на замену index/style/app.

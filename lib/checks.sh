@@ -6,6 +6,19 @@ status_stack() {
     ufw status verbose
     systemctl list-timers 'vps-installer-*' --no-pager
 }
+check_security_updates() {
+    local report="$ROOT/unattended-upgrade-check.log" code
+    log "Checking automatic security updates (dry-run simulation; details: $report)"
+    install -m 600 /dev/null "$report"
+    if unattended-upgrade --dry-run >"$report" 2>&1; then
+        log 'Automatic security-update simulation: OK (no packages installed by this check)'
+    else
+        code=$?
+        warn "Automatic security-update simulation failed (exit $code). Last log lines:"
+        tail -n 30 -- "$report" >&2
+        die "Inspect $report for the full simulation output"
+    fi
+}
 check_stack() {
     require_docker
     compose config --quiet
@@ -33,7 +46,7 @@ check_stack() {
     systemctl is-active --quiet vps-installer-renew.timer vps-installer-backup.timer
     python3 "$APP/helpers/automation.py" check "$ROOT"
     # Evaluate effective unattended-upgrades configuration without upgrading packages.
-    unattended-upgrade --dry-run >/dev/null
+    check_security_updates
     warn 'MANUAL: external scan of SSH/HTTPS and closed panel ports; actual VPS restore and renewal test.'
 }
 
