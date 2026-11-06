@@ -138,7 +138,7 @@ class Engine:
         cache=json.loads(cache_path.read_text()) if cache_path.exists() else {}
         if journal.get('migration'):
             from reality_migration import restore
-            restore(self.api,journal['migration'])
+            if journal['migration']['original'] is not None:restore(self.api,journal['migration'])
             private_json(cache_path,journal['migration']['original_cache'])
         # Restore routing first: inbound deletion itself removes tag references upstream.
         original=journal.get('original_template')
@@ -148,8 +148,9 @@ class Engine:
             elif fingerprint(current)!=fingerprint(original):raise SetupError('Concurrent Xray template edit detected; recovery journal preserved for manual review')
         if journal.get('attempted_create') and cache.get('uuid'):
             old_ids=journal.get('original_ids',[])
+            ownership_profile=journal.get('migration',{}).get('profile',self.profile)
             for row in self.api.inbounds():
-                if row['id'] not in old_ids and row.get('remark')==marker(self.state,self.profile) and any(c.get('id')==cache['uuid'] for c in decoded(row,'settings').get('clients',[])):
+                if row['id'] not in old_ids and row.get('remark')==marker(self.state,ownership_profile) and any(c.get('id')==cache['uuid'] for c in decoded(row,'settings').get('clients',[])):
                     self.api.request('/panel/api/inbounds/del/'+str(row['id']),{})
             # 3.11.0 detaches, rather than deletes, a client when its inbound is removed.
             # Remove only our newly created, now unattached identity, never an old/shared client.
@@ -202,10 +203,13 @@ class Engine:
             if migration:
                 journal['original_profile']=migration['original_profile']
                 journal['migration']=migration
-                journal['attempted_create']=False
+                journal['attempted_create']=migration['original'] is None
                 self.save_journal(journal)
-                from reality_migration import apply
-                row=apply(self.api,migration);created=False
+                if migration['original'] is None:
+                    row,created=ensure(self.api,self.state,self.profile,cache)
+                else:
+                    from reality_migration import apply
+                    row=apply(self.api,migration);created=False
                 validate_existing(row,self.state,self.profile,cache)
             else:row,created=ensure(self.api,self.state,self.profile,cache)
             journal['created_id']=row['id'] if created else None;self.save_journal(journal)

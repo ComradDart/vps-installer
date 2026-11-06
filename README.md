@@ -248,6 +248,11 @@ sudo bash vps-bootstrap.sh --migrate-inbound-reality
 sudo /opt/vps-installer/app/install.sh --show-client
 ```
 
+Если вы уже удалили прежний managed inbound **и его клиента** в панели, эта же
+команда создаст REALITY заново. UUID берётся из сохранённого локального cache,
+если он есть. Чужие inbound/клиенты не перезаписываются; оставшийся старый клиент
+без inbound вызывает отдельный отказ с сохранением данных.
+
 Перед этим A-запись домена INBOUND должна указывать прямо на его IPv4, без
 Cloudflare Proxy и origin AAAA. Собственный HTTPS-сертификат сайта должен быть готов.
 Миграция делает backup, сохраняет inbound id, UUID всех клиентов, пароль панели,

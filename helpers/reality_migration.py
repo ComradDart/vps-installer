@@ -16,10 +16,19 @@ def plan(root,api,state,profile,cache):
     if state['role']!='inbound':raise SetupError('REALITY migration is only for the INBOUND server; OUTBOUND was not modified')
     if profile['mode']=='direct-reality':return None
     if profile['mode']!='direct-grpc':raise SetupError('Only a managed direct-grpc INBOUND can be migrated')
-    original=select_row(api,state,profile,cache)
-    temporary_tag='vps-installer-migration-'+str(original['id'])
-    if any(r['id']!=original['id'] and r.get('tag')==temporary_tag for r in api.inbounds()):raise SetupError('Temporary migration tag is already in use')
-    if any(r['id']!=original['id'] and int(r['port'])==443 for r in api.inbounds()):raise SetupError('Port 443 belongs to another inbound; migration refused')
+    rows=api.inbounds()
+    owned=[r for r in rows if r.get('remark')==marker(state,profile)]
+    original=select_row(api,state,profile,cache) if owned else None
+    if original is None:
+        if any(c.get('uuid')==cache['uuid'] or c.get('email')==cache['email'] for c in api.clients()):
+            raise SetupError('Saved client still exists without the managed inbound; it was preserved. Remove no data; inspect client membership before retrying.')
+        for row in rows:
+            if any(c.get('id')==cache['uuid'] for c in decoded(row,'settings').get('clients',[])):
+                raise SetupError('Saved UUID is attached to another inbound; nothing overwritten')
+    identity=original['id'] if original else None
+    temporary_tag='vps-installer-migration-'+str(identity) if original else None
+    if temporary_tag and any(r['id']!=identity and r.get('tag')==temporary_tag for r in rows):raise SetupError('Temporary migration tag is already in use')
+    if any(r['id']!=identity and int(r['port'])==443 for r in rows):raise SetupError('Port 443 belongs to another inbound; migration refused')
     keyfile=root/'secrets/reality-migration.json'
     if keyfile.exists():keys=json.loads(keyfile.read_text())
     else:
@@ -30,14 +39,13 @@ def plan(root,api,state,profile,cache):
     if keys.get('uuid')!=cache['uuid']:raise SetupError('Pending REALITY keys belong to a different client; migration refused')
     target=dict(profile,mode='direct-reality',active=False)
     newcache=dict(cache,mode='direct-reality',**{k:keys[k] for k in ('private_key','public_key','short_id')})
-    settings=decoded(original,'settings')
-    desired=copy.deepcopy(original)
+    desired=copy.deepcopy(original) if original else payload(state,target,newcache)
     spec=payload(state,target,newcache)
     for key in ('port','listen','protocol','remark','streamSettings'):desired[key]=spec[key]
     desired['disableFlow']=False
     # Client updates use the official clients API: 3.11.0 ignores clients in updateInbound.
     # Keep settings/IDs/limits and the tag exactly as read; the tag owns the relay rule.
-    if not settings.get('clients'):raise SetupError('Managed inbound has no clients')
+    if original and not decoded(original,'settings').get('clients'):raise SetupError('Managed inbound has no clients')
     return dict(original=original,desired=desired,temporary_tag=temporary_tag,original_cache=cache,cache=newcache,original_profile=profile,profile=target)
 
 

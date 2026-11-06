@@ -213,3 +213,61 @@ def test_changed_shared_record_uuid_is_not_reset(migration):
     with pytest.raises(SetupError,match='UUID changed'):set_flow(api,7,cache['email'],'xtls-rprx-vision')
     assert decoded(api.row,'settings')['clients'][0]['id']==cache['uuid']
     assert api.writes==[]
+
+class RemovedPanel(Panel):
+    """The user removed both inbound and client; model 3.11.0 orphan cleanup too."""
+    def __init__(self):self.row=None;self.writes=[];self.keys=0;self.orphan=None
+    def inbounds(self):return [copy.deepcopy(self.row)] if self.row else []
+    def clients(self):
+        if self.row:return [dict(email=c['email'],uuid=c['id']) for c in decoded(self.row,'settings')['clients']]
+        return [self.orphan] if self.orphan else []
+    def request(self,path,data=None):
+        if path.endswith('/inbounds/add'):
+            self.row=dict(data,id=9,tag='in-443-tcp');self.writes.append((path,copy.deepcopy(data)))
+            return copy.deepcopy(self.row)
+        if '/inbounds/del/' in path:
+            client=decoded(self.row,'settings')['clients'][0]
+            self.orphan=dict(email=client['email'],uuid=client['id']);self.row=None;return None
+        if '/clients/get/' in path:
+            if self.orphan:return dict(client=self.orphan,inboundIds=[])
+        if '/clients/del/' in path:self.orphan=None;return None
+        return super().request(path,data)
+
+
+def test_removed_inbound_and_client_are_recreated_as_reality(tmp_path,config):
+    engine,old_api,cache=transaction_engine(tmp_path,config)
+    api=RemovedPanel();engine.api=api
+    # Override the unit harness closure to check the actual replacement panel.
+    engine.verify_internal=lambda current:validate_existing(api.inbounds()[0],engine.state,engine.profile,current)
+    result=engine.provision(public=False,migrate=True)
+    assert result['created'] and api.row['port']==443 and engine.port_owner=='xui'
+    assert decoded(api.row,'settings')['clients'][0]['id']==cache['uuid']
+    assert decoded(api.row,'settings')['clients'][0]['flow']=='xtls-rprx-vision'
+    saved=json.loads((tmp_path/'secrets/managed-xray.json').read_text())
+    assert saved['uuid']==cache['uuid'] and saved['inbound_id']==9
+    assert json.loads((tmp_path/'transport.json').read_text())['mode']=='direct-reality'
+
+
+def test_recreated_inbound_rolls_back_with_saved_profile_from_before_restart(tmp_path,config):
+    engine,old_api,cache=transaction_engine(tmp_path,config)
+    api=RemovedPanel();engine.api=api
+    engine.verify_internal=lambda current:validate_existing(api.inbounds()[0],engine.state,engine.profile,current)
+    original_profile=json.loads((tmp_path/'transport.json').read_text())
+    def restart_view_failure():
+        # A new process would initially load the old on-disk gRPC profile.
+        engine.profile=original_profile
+        raise SetupError('Injected restart-view failure')
+    engine.actual_bindings=restart_view_failure
+    with pytest.raises(SetupError,match='Injected restart-view'):engine.provision(public=False,migrate=True)
+    assert api.inbounds()==[] and api.clients()==[]
+    assert engine.port_owner=='nginx'
+    assert json.loads((tmp_path/'transport.json').read_text())==original_profile
+    assert json.loads((tmp_path/'secrets/managed-xray.json').read_text())==cache
+    assert not (tmp_path/'.transport-transaction').exists()
+
+
+def test_existing_orphan_client_is_preserved_instead_of_guessed(migration):
+    root,state,profile,cache,old_api,value=migration
+    api=RemovedPanel();api.orphan=dict(email=cache['email'],uuid=cache['uuid'])
+    with pytest.raises(SetupError,match='Saved client still exists'):plan(root,api,state,profile,cache)
+    assert api.orphan['uuid']==cache['uuid'] and api.writes==[]
