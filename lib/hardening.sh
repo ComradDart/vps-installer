@@ -7,6 +7,24 @@ base_packages() {
         sqlite3 rsync ripgrep certbot
     # No blanket apt upgrade, dist-upgrade, kernel hold, or scheduled reboot.
 }
+wait_fail2ban() {
+    local timeout=${1:-30} deadline
+    deadline=$((SECONDS + timeout))
+    log 'Waiting for fail2ban socket and sshd jail readiness'
+    while ((SECONDS < deadline)); do
+        if fail2ban-client ping >/dev/null 2>&1 && fail2ban-client status sshd >/dev/null 2>&1; then
+            fail2ban-client status sshd
+            return 0
+        fi
+        if systemctl is-failed --quiet fail2ban.service; then break; fi
+        sleep 1
+    done
+    warn "fail2ban did not become ready within ${timeout}s; service diagnostics follow"
+    systemctl status fail2ban.service --no-pager -l >&2 || true
+    journalctl -u fail2ban.service -n 50 --no-pager >&2 || true
+    if [[ -r /var/log/fail2ban.log ]]; then tail -n 50 /var/log/fail2ban.log >&2 || true; fi
+    die 'fail2ban socket/sshd jail unavailable. Installation stopped; inspect the diagnostics above.'
+}
 hardening() {
     cat >/etc/sysctl.d/99-vps-installer.conf <<'EOF'
 net.ipv4.tcp_syncookies = 1
@@ -57,7 +75,7 @@ bantime = 1h
 banaction = ufw
 EOF
     fail2ban-client -t
-    systemctl enable --now fail2ban
+    systemctl enable fail2ban
     systemctl restart fail2ban
-    fail2ban-client status sshd
+    wait_fail2ban
 }
