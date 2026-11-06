@@ -37,7 +37,7 @@ def outbound(peer,tag='proxy'):
     user={'id':peer['uuid'],'encryption':'none'}
     if peer['mode']=='grpc':stream={'network':'grpc','security':'tls','tlsSettings':{'serverName':peer['server_name'],'allowInsecure':False,'alpn':['h2']},'grpcSettings':{'serviceName':peer['service'],'multiMode':False}}
     else:
-        user['flow']='xtls-rprx-vision'
+        user['flow']=peer.get('flow','xtls-rprx-vision')
         stream={'network':'tcp','security':'reality','realitySettings':{'serverName':peer['server_name'],'fingerprint':peer.get('fingerprint','chrome'),'publicKey':peer['public_key'],'shortId':peer['short_id'],'spiderX':'/'}}
     return {'tag':tag,'protocol':'vless','settings':{'vnext':[{'address':peer['address'],'port':peer['port'],'users':[user]}]},'streamSettings':stream}
 
@@ -47,5 +47,7 @@ def client_config(peer,port=1080):
 def client_uri(peer,title):
     q={'encryption':'none','security':'tls' if peer['mode']=='grpc' else 'reality','type':'grpc' if peer['mode']=='grpc' else 'tcp','sni':peer['server_name']}
     if peer['mode']=='grpc':q.update(serviceName=peer['service'],alpn='h2')
-    else:q.update(flow='xtls-rprx-vision',pbk=peer['public_key'],sid=peer['short_id'],fp=peer.get('fingerprint','chrome'))
+    else:
+        q.update(pbk=peer['public_key'],sid=peer['short_id'],fp=peer.get('fingerprint','chrome'))
+        if peer.get('flow','xtls-rprx-vision'):q['flow']=peer.get('flow','xtls-rprx-vision')
     return 'vless://'+peer['uuid']+'@'+peer['address']+':'+str(peer['port'])+'?'+urllib.parse.urlencode(q)+'#'+urllib.parse.quote(title,safe='')

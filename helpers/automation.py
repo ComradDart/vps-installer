@@ -269,8 +269,8 @@ class Engine:
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',choices=('configure','check','recover','profile-init','import-peer','login-check','version-check','cf-check','profile-info','migrate-inbound-reality'))
-    parser.add_argument('root');parser.add_argument('--mode');parser.add_argument('--topology',default='standalone');parser.add_argument('--base',default='http://127.0.0.1:2053');args=parser.parse_args();root=Path(args.root)
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',choices=('configure','check','recover','profile-init','import-peer','login-check','version-check','cf-check','profile-info','migrate-inbound-reality','check-client','show-client-for'))
+    parser.add_argument('root');parser.add_argument('--mode');parser.add_argument('--client-email');parser.add_argument('--topology',default='standalone');parser.add_argument('--base',default='http://127.0.0.1:2053');args=parser.parse_args();root=Path(args.root)
     if args.command=='profile-info':
         value=profile(root);print('active' if value and value['active'] else 'pending' if value else 'missing');return
     if args.command=='profile-init':
@@ -286,6 +286,12 @@ def main():
     docker=Docker()
     if args.command=='version-check':docker.version();return
     api,version=authenticated_api(root,docker,args.base);engine=Engine(root,api,docker,version)
+    if args.command in ('check-client','show-client-for'):
+        if not args.client_email:raise SetupError('Client email is required')
+        from client_tools import check_selected,show_selected
+        if args.command=='check-client':check_selected(engine,args.client_email)
+        else:show_selected(engine,args.client_email)
+        return
     if args.command=='recover':engine.recover();return
     if args.command=='check':
         cache_path=root/'secrets/managed-xray.json'

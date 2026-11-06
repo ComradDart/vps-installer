@@ -26,7 +26,7 @@ def probe(docker,root,peer,expected_ip,url='https://api4.ipify.org?format=json',
         response=docker.run(*args,url,timeout=35)
         try:actual=json.loads(response)['ip'];ipaddress.ip_address(actual)
         except (ValueError,KeyError,TypeError):raise SetupError('Real client transferred an unexpected diagnostic response') from None
-        if ipaddress.ip_address(actual)!=ipaddress.ip_address(expected_ip):raise SetupError('Real client exit address differs from the selected OUTBOUND; direct bypass or wrong route')
+        if ipaddress.ip_address(actual)!=ipaddress.ip_address(expected_ip):raise SetupError('Real client transferred data but exit address differs: expected '+str(expected_ip)+', received '+str(actual)+'; check the selected OUTBOUND route')
         return {'transport':'PASSED','exit_address':'PASSED'}
     finally:
         try:docker.run('rm','-f',name,timeout=15)

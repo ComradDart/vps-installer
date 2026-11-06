@@ -22,6 +22,8 @@ Usage: sudo ./install.sh [command]
   --status                 Show saved state, containers, sockets, timers
   --check                  Verify infrastructure and real authenticated VLESS transfer
   --check-xray             Verify Xray API, ports and real VLESS transfer only
+  --check-xray-client EMAIL Test an existing client selected by its panel email
+  --show-client-for EMAIL   Show that existing client profile on an interactive terminal
   --reconfigure            Explicitly update site title/text; other identity stays fixed
   --reset-3xui-password     Change only existing panel admin credentials (brief xui stop)
   --configure-xray         Automatically configure and verify the selected Xray transport
@@ -141,6 +143,7 @@ main() {
             [[ $# == 3 ]] || die 'Use --probe-route HOST PORT'
             exec python3 "$APP/helpers/probe.py" "$2" "$3";;
         --restore) [[ $# == 2 ]] || die 'Use --restore /absolute/backup.tar.gz';;
+        --check-xray-client|--show-client-for) [[ $# == 2 && -n $2 ]] || die 'Specify the client email shown in the panel';;
         ''|--status|--check|--check-xray|--configure-xray|--migrate-inbound-reality|--show-client|--reconfigure|--reset-3xui-password|--reset-3xui-credentials|--backup|--uninstall|--apply-docker-firewall|--renew)
             (( $# <= 1 )) || die 'Unexpected arguments';;
         *) die 'Unknown command; see --help';;
@@ -155,6 +158,8 @@ main() {
         --show-client) show_client;;
         --check) check_stack;;
         --check-xray) require_docker; python3 "$APP/helpers/automation.py" check "$ROOT";;
+        --check-xray-client) require_docker; python3 "$APP/helpers/automation.py" check-client "$ROOT" --client-email "$2";;
+        --show-client-for) require_docker; python3 "$APP/helpers/automation.py" show-client-for "$ROOT" --client-email "$2";;
         --reconfigure) reconfigure_site;;
         --reset-3xui-password|--reset-3xui-credentials) reset_xui;;
         --backup) backup_stack;;

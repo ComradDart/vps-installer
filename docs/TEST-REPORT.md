@@ -10,7 +10,7 @@ amd64. Это наблюдавшиеся версии, а не закрепле�
 
 ## Статус
 
-- **PASSED:** Bash syntax, ShellCheck и 149 unit/negative тестов.
+- **PASSED:** Bash syntax, ShellCheck и 156 unit/negative тестов.
 - **PASSED:** настоящий gRPC/TLS → nginx → Xray data transfer; API creation,
   повторный запуск без дубликатов и сохранение UUID, проверка port owner/10000.
 - **PASSED:** реальный отказ клиентской передачи → откат файлов/inbound/созданного
@@ -218,3 +218,21 @@ cache, без изменения OUTBOUND-профиля. Конфликт по�
   Подмена этих шагов host hardening/apt-проверками исключена unit-сценарием.
 - Это unit-проверки и файловая модель API, не новый Docker/VPS/Cloudflare E2E.
   Полный E2E этой версии **NOT RUN** из-за прежнего ограничения диска среды.
+
+## Диагностика выбранного клиента (7 ноября 2026, Москва)
+
+- **PASSED:** 156 unit/negative тестов, Bash syntax и ShellCheck.
+- --check-xray-client EMAIL не зависит от удалённого служебного UUID: выбирает
+  единственную текущую VLESS-привязку email через API, сохраняет реальные enable/flow
+  и использует текущие serverNames/shortIds. UUID/серверные параметры не изменяются.
+- Этапы проверки: заданный OUTBOUND (для relay), internal INBOUND, public INBOUND.
+  При отличии выходного IP ошибка явно сообщает, что данные были переданы, но
+  выбранный маршрут не соответствует ожидаемому.
+- --show-client-for EMAIL пишет актуальный профиль только в tty. X25519 public key
+  детерминированно выводится из существующего private key через OpenSSL DER/stdin;
+  серверный private key не попадает в argv, environment, stdout или URI.
+- Семь unit-сценариев: RFC7748 вектор, устаревшая public-key metadata, отсутствие
+  test-client cache, фактический пустой flow, неоднозначность/disabled client,
+  отсутствие API mutations/утечек stdout и вывод URI только в терминал.
+- Эти тесты не являются новым сетевым E2E. Docker/VPS/Cloudflare E2E новой команды
+  в песочнице **NOT RUN**; пользовательская проверка на VPS ожидается отдельно.

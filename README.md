@@ -302,6 +302,12 @@ sudo /opt/vps-installer/app/install.sh --reconfigure
   пакетов этой проверкой. Полный stdout/stderr хранится в root-only
   `/opt/vps-installer/unattended-upgrade-check.log`; в терминале показывается итог,
   при ошибке — последние строки лога и остановка.
+- Если служебный тестовый клиент удалён, используйте существующего клиента по его
+  email из панели: `--check-xray-client CLIENT_EMAIL`. Команда читает фактические
+  параметры API и проверяет OUTBOUND/internal/public, сохраняя UUID, ключи и настройки.
+- `--show-client-for CLIENT_EMAIL` показывает в tty ссылку именно этого клиента.
+  REALITY public key вычисляется из текущего private key через OpenSSL (stdin),
+  без регенерации ключей и без вывода private key. Учтён текущий flow клиента.
 - `--check-xray`: только API/портовые привязки и настоящая передача VLESS, с отдельными
   этапами internal/public; без запуска проверки автообновлений и прочих host checks.
 - `--reset-3xui-password`: backup, краткая остановка только xui, официальный CLI,
