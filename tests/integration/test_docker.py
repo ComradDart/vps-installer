@@ -81,12 +81,13 @@ def live():
             for value in (ctx.get('password',''),ctx.get('oldpassword','')):
                 if value:text=text.replace(value,'<redacted>')
             debug.append(name+'\n'+text)
-        (APP.parent/'integration-debug.log').write_text('\n'.join(debug))
+        results=APP/'test-results';results.mkdir(exist_ok=True)
+        (results/'integration-debug.log').write_text('\n'.join(debug))
         for name in (ident+'-client',ident+'-curl',ident+'-target'):
             subprocess.run(['docker','rm','-f',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         try:dc('down','--remove-orphans')
         finally:
-            report=APP.parent/'integration-results.json';report.write_text(json.dumps(ctx['checkpoints'],indent=2))
+            report=results/'integration-results.json';report.write_text(json.dumps(ctx['checkpoints'],indent=2))
             shutil.rmtree(base)
 
 def credentials(c,initial):

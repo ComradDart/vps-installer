@@ -120,6 +120,6 @@ install_app() {
     install -d -m 700 "$ROOT/app"
     cp -a "$APP/." "$ROOT/app/"
     chown -R root:root "$ROOT/app"
-    chmod 700 "$ROOT/app/install.sh" "$ROOT/app/vps_setup.sh"
+    chmod 700 "$ROOT/app/install.sh"
     APP="$ROOT/app"
 }

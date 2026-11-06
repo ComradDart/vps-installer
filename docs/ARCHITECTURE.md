@@ -40,8 +40,11 @@ inbound id и UUID служебного клиента. Remark — изменя�
 использует исходную программную метку; чужой занятый порт не перезаписывается.
 Дополнительные клиенты сохраняются; существующие UUID/REALITY keys не генерируются заново.
 
-Panel shareAddrStrategy/custom и shareAddr с доменом задаются отдельно от listen.
-Это исключает localhost в новых экспортируемых ссылках при доступе через SSH-туннель.
+Panel shareAddrStrategy/custom и shareAddr задаются отдельно от listen. Для
+INBOUND/REALITY штатные Hosts задают публичный Address/443, а REALITY-параметры
+наследуются от действующего inbound. subURI/subJsonURI и nginx обеспечивают
+публичные подписки. webDomain не меняется; localhost SSH-туннеля в VLESS Address
+не используется. PUBLIC_DOMAIN хранится в защищённом state.json INBOUND.
 У существующего owned inbound адрес экспорта корректируется с приватным journal;
 при ошибке возвращается прежнее значение, пользовательское имя/клиенты не меняются.
 

@@ -15,3 +15,8 @@ test-results/
 /transport.json
 /automation-report.json
 /.transport-transaction/
+/download/
+/public-links-transaction.json
+/panel-users.json
+/panel-users-transaction.json
+/panel-users-backups/
