@@ -29,6 +29,7 @@ Usage: sudo ./install.sh [command]
   --configure-xray         Automatically configure and verify the selected Xray transport
   --migrate-inbound-reality Convert the managed INBOUND to REALITY/Vision, retaining UUIDs
   --show-client            Show verified VLESS URI only on an interactive terminal
+  --panel-users            Manage individual SSH keys/tunnel-only Linux accounts
   --backup                 Consistent SQLite/local configuration backup
   --restore /absolute/file.tar.gz
                            Restore same stack identity, preserving current host SSH/UFW
@@ -144,7 +145,7 @@ main() {
             exec python3 "$APP/helpers/probe.py" "$2" "$3";;
         --restore) [[ $# == 2 ]] || die 'Use --restore /absolute/backup.tar.gz';;
         --check-xray-client|--show-client-for) [[ $# == 2 && -n $2 ]] || die 'Specify the client email shown in the panel';;
-        ''|--status|--check|--check-xray|--configure-xray|--migrate-inbound-reality|--show-client|--reconfigure|--reset-3xui-password|--reset-3xui-credentials|--backup|--uninstall|--apply-docker-firewall|--renew)
+        ''|--status|--check|--check-xray|--configure-xray|--migrate-inbound-reality|--show-client|--panel-users|--reconfigure|--reset-3xui-password|--reset-3xui-credentials|--backup|--uninstall|--apply-docker-firewall|--renew)
             (( $# <= 1 )) || die 'Unexpected arguments';;
         *) die 'Unknown command; see --help';;
     esac
@@ -152,6 +153,7 @@ main() {
     if [[ ${1:-} == '' ]]; then install_main; return; fi
     load_state
     case "$1" in
+        --panel-users) install_app; python3 "$APP/helpers/panel_users.py" menu "$ROOT";;
         --status) status_stack;;
         --configure-xray) configure_xray;;
         --migrate-inbound-reality) migrate_inbound_reality;;
