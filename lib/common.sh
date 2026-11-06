@@ -95,11 +95,20 @@ init_runtime() {
     trap 'exit 143' TERM HUP
     trap 'warn "Operation failed at line $LINENO (command arguments are not logged)"' ERR
 }
+supported_os() {
+    case "$1:$2" in
+        debian:12|debian:13|ubuntu:24.04|ubuntu:26.04) return 0;;
+        *) return 1;;
+    esac
+}
+require_supported_os() {
+    supported_os "$1" "$2" || die "Detected ${3:-Linux} (ID=$1 VERSION_ID=$2). Supported targets: Debian 12/13, Ubuntu 24.04/26.04 LTS."
+}
 preflight() {
     # os-release is supplied by the OS, never by a user state file.
     # shellcheck disable=SC1091
     . /etc/os-release
-    case "$ID:${VERSION_ID:-}" in debian:12|debian:13|ubuntu:24.04) ;; *) die 'Supported targets: Debian 12/13, Ubuntu 24.04 LTS';; esac
+    require_supported_os "${ID:-unknown}" "${VERSION_ID:-unknown}" "${PRETTY_NAME:-Linux}"
     [[ $(dpkg --print-architecture) == amd64 || $(dpkg --print-architecture) == arm64 ]] || die 'Only amd64 and arm64 supported'
     [[ -d /run/systemd/system ]] || die 'A systemd VPS is required; containers are for tests only'
     (( $(df -Pm /opt | awk 'NR==2 {print $4}') >= 4096 )) || die 'Need at least 4 GiB free in /opt'

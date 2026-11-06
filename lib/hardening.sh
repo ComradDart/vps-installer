@@ -3,7 +3,7 @@ base_packages() {
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends ca-certificates curl gnupg openssl sudo ufw fail2ban \
-        unattended-upgrades chrony jq nftables iptables openssh-server dnsutils python3 python3-bcrypt \
+        unattended-upgrades chrony python3-systemd jq nftables iptables openssh-server dnsutils python3 python3-bcrypt \
         sqlite3 rsync ripgrep certbot
     # No blanket apt upgrade, dist-upgrade, kernel hold, or scheduled reboot.
 }

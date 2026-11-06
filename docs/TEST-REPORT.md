@@ -49,3 +49,19 @@ Rootless Docker 29.9.2 / Compose 2.40.3, Debian 13 managed environment, amd64. �
 TLS проверялся через временный доверенный CA и hostname, без curl -k. Наличие выбранных паролей в normal Docker logs отдельно проверено; секреты в state/.env не писались. Snapshot SQLite был реально восстановлен и прочитан работающей панелью. Это не доказательство полного архивного --restore.
 
 Архивный backup/restore защищён owner/mode/sha256/path checks и имеет негативный unit test недоверенного архива, но полный root lifecycle требует VPS. Не выдавайте mocks за E2E.
+
+## Обновление: Ubuntu 26.04 и установка без Git
+
+- Добавлен Ubuntu 26.04 LTS (включая образ 26.04.1 с VERSION_ID=26.04).
+- Проверены официальная документация Docker и доступность Release для resolute.
+- 78 unit/negative тестов проходят: добавлены матрица ОС, диагностика версии,
+  безопасная распаковка bootstrap и cleanup при отказе.
+- get.sh скачивает main по HTTPS через curl/wget без Git, проверяет структуру архива,
+  ставит только отсутствующие bootstrap prerequisites и запускает текущий install.sh.
+- Для fail2ban backend=systemd явно добавлен python3-systemd (recommends не устанавливаются).
+- Standalone download/vps_setup.sh пересобран с текущим кодом и проверен распаковкой.
+- Полная установка SSH/UFW/ACME на Ubuntu 26.04 остаётся MANUAL; прежняя серия
+  трёх Docker integration тестов относится к инфраструктуре, а не полной ОС.
+- FAILED (ограничение тестовой среды): apt simulation в контейнере Ubuntu 26.04.1
+  не завершилась из-за доверия к TLS-сертификату прокси песочницы. Это не успешная
+  проверка установки пакетов; реальное развёртывание на Ubuntu 26.04 остаётся MANUAL.

@@ -20,7 +20,7 @@ nginx:latest
 
 ## 1. Подготовка
 
-Целевые ОС: Debian 12 / Debian 13 / Ubuntu 24.04 LTS с systemd, amd64/arm64.
+Целевые ОС: Debian 12 / Debian 13 / Ubuntu 24.04 / 26.04 LTS с systemd, amd64/arm64.
 Реальная контейнерная проверка выполнена на amd64. Нужны root/sudo, консоль провайдера,
 минимум 4 GiB свободного места, собственный домен и свободные TCP 80/443/2053/8443.
 
@@ -32,7 +32,7 @@ nginx:latest
 - Для существующего сервера прочитайте [миграцию](docs/MIGRATION.md): старые сервисы
   и данные автоматически не удаляются и не останавливаются.
 
-На минимальном образе ОС:
+Только при прямом запуске `install.sh` на минимальном образе ОС (bootstrap `get.sh` установит это сам):
 
 ```bash
 sudo apt-get update
@@ -40,6 +40,34 @@ sudo apt-get install -y python3 util-linux
 ```
 
 ## 2. Установка
+
+### Рекомендуется: без Git, через curl или wget
+
+Сохраните bootstrap-скрипт из этого репозитория и запустите его:
+
+```bash
+curl -fL https://raw.githubusercontent.com/ComradDart/vps-installer/main/get.sh -o vps-bootstrap.sh
+sudo bash vps-bootstrap.sh
+```
+
+Если вместо curl установлен wget:
+
+```bash
+wget -O vps-bootstrap.sh https://raw.githubusercontent.com/ComradDart/vps-installer/main/get.sh
+sudo bash vps-bootstrap.sh
+```
+
+Git не требуется. Bootstrap проверяет ОС, при необходимости ставит Python 3,
+util-linux, curl и CA-сертификаты, скачивает текущий main по HTTPS во временную
+папку, проверяет пути архива, запускает install.sh и удаляет временные файлы.
+Ваш текущий каталог и существующий Git checkout не перезаписываются. Для root
+можно запускать `bash vps-bootstrap.sh` без sudo.
+
+Ubuntu 26.04 LTS добавлена в поддерживаемые цели. Наличие официального Docker
+репозитория resolute проверено; полный host hardening/SSH/UFW на этой ОС требует
+проверки на VPS. Будущая ошибка ОС показывает обнаруженные ID и VERSION_ID.
+
+### Другие способы
 
 Из GitHub: откройте **Code → Download ZIP**, распакуйте архив и в каталоге
 `vps-installer-main` выполните `sudo ./install.sh`. Через Git:

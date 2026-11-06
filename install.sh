@@ -29,7 +29,7 @@ Usage: sudo ./install.sh [command]
   --uninstall              Stop/remove managed containers/units; preserve all data/security
   --probe-route HOST PORT   Test a particular TCP destination; no routing changes
 Internal: --confirm-ssh TOKEN "$SSH_CONNECTION", --apply-docker-firewall, --renew
-Targets: systemd Debian 12/13, Ubuntu 24.04 LTS; IPv4-only base, Engine >=28.
+Targets: systemd Debian 12/13, Ubuntu 24.04/26.04 LTS; IPv4-only base, Engine >=28.
 No automatic migration/import/deletion of legacy services. Read README.md first.
 EOF
 }

@@ -1,6 +1,6 @@
 # Ручная проверка на тестовой VPS
 
-Проверьте отдельно Debian 12, Debian 13, Ubuntu 24.04 LTS. Нужны snapshot и консоль
+Проверьте отдельно Debian 12, Debian 13, Ubuntu 24.04/26.04 LTS. Нужны snapshot и консоль
 провайдера. Эти проверки в песочнице не выполнялись.
 
 1. Подготовьте A-запись домена на VPS, без origin AAAA, DNS only в Cloudflare.
