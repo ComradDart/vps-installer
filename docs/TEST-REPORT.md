@@ -10,7 +10,7 @@ amd64. Это наблюдавшиеся версии, а не закрепле�
 
 ## Статус
 
-- **PASSED:** Bash syntax, ShellCheck и 123 unit/negative теста.
+- **PASSED:** Bash syntax, ShellCheck и 135 unit/negative тестов.
 - **PASSED:** настоящий gRPC/TLS → nginx → Xray data transfer; API creation,
   повторный запуск без дубликатов и сохранение UUID, проверка port owner/10000.
 - **PASSED:** реальный отказ клиентской передачи → откат файлов/inbound/созданного
@@ -156,3 +156,33 @@ exit status выводит последние 30 строк и останавл�
   обработки вывода, не реальный apt/unattended-upgrade прогон на Ubuntu.
 - Реальный dry-run на VPS и повторный Docker/Cloudflare E2E для этого изменения
   не запускались; предыдущие ограничения отчёта остаются в силе.
+
+## INBOUND REALITY и миграция (6 ноября 2026)
+
+Новый INBOUND использует REALITY/Vision с target nginx:8443; relay — первый вариант
+выбора topology. gRPC остаётся режимом OUTBOUND/его клиентского профиля. Добавлена
+явная команда --migrate-inbound-reality для старого managed INBOUND gRPC.
+
+- **PASSED:** 135 unit/negative тестов, Bash syntax и ShellCheck.
+- Проверены сохранение inbound id/tag и UUID всех клиентов, Vision, сохранение
+  metadata/квот, повтор без регенерации ключей, отказ при изменённой identity,
+  отказ для OUTBOUND и выбор правильного транспорта для каждой роли.
+- Файловая модель транзакции проверяет отказ после смены владельца 443, восстановление
+  Compose/profile/cache/API и успешную повторную попытку с теми же UUID/ключами.
+  Docker и передача данных в этом unit-сценарии — stubs, не E2E.
+- Настоящий API-прогон на официальных бинарниках 3x-ui/Xray выявил автопереименование
+  tag при смене порта. Исправлено переходом через временный custom tag с возвратом
+  прежнего tag; следующее выполнение дошло до применения Compose после изменения
+  транспорта и flow через API.
+- **FAILED / BLOCKED окружением:** Docker-переход портов оборвался на ENOSPC
+  (заполнен VFS-диск песочницы). Повтор с облегчённым тестовым filesystem также
+  остановился при подготовке из-за отсутствия места. Возврат после полного
+  Docker-handoff, обычный HTTPS через REALITY self-steal и полный повтор миграции
+  в текущей версии **не подтверждены реальным E2E**. Тест для них добавлен в
+  tests/integration/test_reality_migration.py; нужен повтор в среде с диском.
+- **NOT RUN:** внешний Cloudflare E2E и миграция на настоящей VPS. Предыдущие
+  результаты обычного gRPC/REALITY не заменяют эту проверку миграции.
+
+В production Compose остаются только официальные latest образы. Test fixture
+может запускать те же официальные бинарники и musl loader в уменьшенном filesystem
+через VPS_TEST_RUNTIME; это не эквивалент полноценной VM и не развёртываемый образ.

@@ -17,9 +17,10 @@ nginx:latest
 сохраняются при повторном запуске.
 
 **Для Cloudflare выбирайте `cloudflare-grpc`: VLESS + gRPC + обычный TLS, без REALITY.**
-`direct-reality` — отдельный необязательный режим прямого доступа к VPS; Cloudflare
-Proxy перед ним использовать нельзя. INBOUND поддерживает самостоятельный сервер
-или relay с явно предоставленным профилем OUTBOUND.
+Для INBOUND используется **REALITY/Vision** с self-steal на собственный сайт nginx.
+Cloudflare Proxy перед INBOUND использовать нельзя. INBOUND поддерживает relay с
+явно предоставленным профилем OUTBOUND (выбор по умолчанию) или самостоятельный сервер.
+OUTBOUND также позволяет отдельно выбрать direct-reality.
 
 Полная установка на VPS пока не проверена. Контейнерные проверки и точные ограничения
 перечислены в [отчёте](docs/TEST-REPORT.md). Сначала используйте тестовую VPS.
@@ -213,7 +214,7 @@ destination port `2053`. Запустите правило и откройте `
 | Режим | Публичный TCP/443 | Настройка |
 |---|---|---|
 | `cloudflare-grpc` (OUTBOUND) | nginx TLS/HTTP2 | `/vlessgrpc/Tun` → `grpc://xui:10000`; сайт на `/`; Cloudflare Proxied |
-| `direct-grpc` (самостоятельный INBOUND) | nginx TLS/HTTP2 | тот же транспорт без обязательного Cloudflare |
+| INBOUND: `direct-reality` + relay | Xray REALITY / Vision | устройства → REALITY:443 → заданный OUTBOUND; target `nginx:8443` |
 | `direct-reality` | Xray REALITY / Vision | собственный домен в serverNames, target `nginx:8443`; сайт через self-steal |
 
 Во всех режимах панель остаётся на host `127.0.0.1:2053`. Публикаций TCP/10000,
@@ -232,6 +233,35 @@ Cloudflare networks и выполняет настоящий VLESS/gRPC-сеан
 Сам факт HTTP 200 сайта или адрес Cloudflare успехом VLESS не считается. Если маршрут
 не работает, установка завершается ошибкой с откатом; успех не объявляется.
 Токен Cloudflare не нужен: переключатель gRPC включаете в dashboard.
+
+Новый INBOUND автоматически выбирает REALITY/Vision для устройств, а не gRPC.
+Типичный путь: **устройство → INBOUND REALITY:443 → Cloudflare → OUTBOUND gRPC**.
+Публичный TCP/443 на INBOUND принадлежит Xray в 3x-ui. nginx принимает HTTPS на
+внутреннем 8443 и является REALITY target (`nginx:8443`): обычный TLS-клиент видит
+сайт. Это механизм REALITY self-steal; отдельный VLESS fallbacks-массив не требуется.
+
+Если прежняя версия уже создала gRPC на INBOUND, выполните **на INBOUND**:
+
+```bash
+curl -fL https://raw.githubusercontent.com/ComradDart/vps-installer/main/get.sh -o vps-bootstrap.sh
+sudo bash vps-bootstrap.sh --migrate-inbound-reality
+sudo /opt/vps-installer/app/install.sh --show-client
+```
+
+Перед этим A-запись домена INBOUND должна указывать прямо на его IPv4, без
+Cloudflare Proxy и origin AAAA. Собственный HTTPS-сертификат сайта должен быть готов.
+Миграция делает backup, сохраняет inbound id, UUID всех клиентов, пароль панели,
+существующую topology и OUTBOUND-профиль. Выставляет Vision через официальный API
+клиентов, передаёт 443 от nginx к Xray и проверяет настоящий клиентский обмен.
+Краткий перерыв соединений возможен. В случае ошибки восстанавливается прежний
+inbound/flow, Compose, nginx и локальный профиль. При параллельном изменении
+identity/транспорта сохраняется приватный journal для review.
+
+После успеха **заново импортируйте профили устройств**: UUID остаётся тем же, но
+transport/security, REALITY public key и shortId отличаются от прежнего gRPC.
+Дополнительные клиенты сохраняются в панели и получают Vision. Повторный запуск
+команды не меняет действующие UUID/ключи. Миграция не создаёт новый OUTBOUND-маршрут:
+если прежняя topology была standalone, она остаётся standalone.
 
 Для INBOUND relay требуется готовая VLESS-ссылка OUTBOUND (gRPC/TLS или REALITY/Vision)
 и **его выходной IPv4**, отличающийся от IP INBOUND. До изменения маршрутизации

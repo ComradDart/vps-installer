@@ -37,3 +37,9 @@ POST /panel/api/xray/update передаёт form xraySetting; inbound add — J
 settings/streamSettings как JSON strings. Не используются выдуманные API endpoints.
 
 - Client get/list/delete (проверка ownership при rollback): https://github.com/MHSanaei/3x-ui/blob/v3.11.0/internal/web/controller/client.go
+
+Миграция INBOUND (тот же проверенный контракт 3.11.0):
+
+- updateInbound/автоматическая смена tag/keepStoredClients: https://github.com/MHSanaei/3x-ui/blob/v3.11.0/internal/web/service/inbound.go
+- clients/update и inboundIds-фильтр: https://github.com/MHSanaei/3x-ui/blob/v3.11.0/internal/web/controller/client.go
+- Сохранение общих metadata и flow: https://github.com/MHSanaei/3x-ui/blob/v3.11.0/internal/web/service/client_crud.go

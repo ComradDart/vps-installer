@@ -64,7 +64,7 @@ class Engine:
         return self.docker.run('run','--rm','--network',self.docker.network,'--user','101:101','--cap-drop','ALL','--security-opt','no-new-privileges:true','--sysctl','net.ipv4.ip_unprivileged_port_start=0',
             '-v',str(self.root/'nginx.conf')+':/etc/nginx/nginx.conf:ro','-v',str(conf)+':/etc/nginx/conf.d:ro','-v',str(self.root/'tls')+':/etc/nginx/tls:ro',
             '--tmpfs','/tmp:uid=101,gid=101,mode=0700','--tmpfs','/var/cache/nginx:uid=101,gid=101,mode=0700','--entrypoint','nginx',image,'-t')
-    def prepare(self):
+    def prepare(self,original_profile=None):
         if self.transaction.exists():raise SetupError('Interrupted transport transaction found; recovery must finish first')
         self.transaction.mkdir(mode=0o700)
         try:
@@ -77,7 +77,7 @@ class Engine:
             private_json(stage/'compose.json',proposed)
             self.compose('config','--quiet',file=stage/'compose.json');self.nginx_test(stage/'conf.d')
             # The journal contains secrets from Xray settings; it is always root-only.
-            journal={'status':'prepared','original_template':None,'applied_template_hash':None,'attempted_create':False,'created_id':None,'files':{},'had_profile':True,'original_profile':self.profile,'owner_changed':self.profile['mode']=='direct-reality' and not self.profile['active']}
+            journal={'status':'prepared','original_template':None,'applied_template_hash':None,'attempted_create':False,'created_id':None,'files':{},'had_profile':True,'original_profile':original_profile or self.profile,'owner_changed':self.profile['mode']=='direct-reality' and not self.profile['active']}
             for label,path in [('compose',self.compose_path),('tls',self.root/'conf.d/tls.conf'),('include',self.root/'conf.d/vps-grpc.inc')]:
                 journal['files'][label]={'path':str(path),'text':path.read_text() if path.exists() else None,'applied_hash':None}
             private_json(self.transaction/'journal.json',journal)
@@ -136,6 +136,10 @@ class Engine:
             return
         journal=json.loads(path.read_text());cache_path=self.root/'secrets/managed-xray.json'
         cache=json.loads(cache_path.read_text()) if cache_path.exists() else {}
+        if journal.get('migration'):
+            from reality_migration import restore
+            restore(self.api,journal['migration'])
+            private_json(cache_path,journal['migration']['original_cache'])
         # Restore routing first: inbound deletion itself removes tag references upstream.
         original=journal.get('original_template')
         if original is not None and journal.get('applied_template_hash'):
@@ -171,23 +175,42 @@ class Engine:
         self.compose('up','-d','--pull','never')
         self.docker.run('exec',self.docker.nginx,'nginx','-t');self.docker.run('exec',self.docker.nginx,'nginx','-s','reload')
         shutil.rmtree(self.transaction)
-    def provision(self,public=True):
+    def provision(self,public=True,migrate=False):
         self.recover()
+        self.profile=profile(self.root)
         cache=planned_cache(self.root,self.api,self.state,self.profile)
+        migration=None
+        if migrate:
+            from reality_migration import plan
+            migration=plan(self.root,self.api,self.state,self.profile,cache)
+            if migration:
+                self.profile=migration['profile'];cache=migration['cache']
+        if self.profile['mode']=='direct-reality' and not self.ca_file:
+            from dns import resolve,check_answers
+            try:check_answers(self.state['public_ip'],resolve(self.state['domain']))
+            except ValueError:raise SetupError('REALITY requires DNS-only A pointing at this VPS, without origin AAAA. Cloudflare Proxy must be off for the INBOUND hostname.') from None
         if self.profile['topology']=='relay':
             remote=json.loads((self.root/'secrets/relay.json').read_text())
             if remote['expected_ip']==self.state['public_ip']:raise SetupError('OUTBOUND exit IPv4 must differ from this node to verify the relay route')
             # Complete authenticated data transfer is required BEFORE local routing writes.
             probe(self.docker,self.root,remote,remote['expected_ip'],self.test_url,self.ca_file)
-        journal,stage=self.prepare()
+        journal,stage=self.prepare(original_profile=migration['original_profile'] if migration else None)
         try:
             journal['original_ids']=[r['id'] for r in self.api.inbounds()]
             journal['original_client_emails']=[c['email'] for c in self.api.clients()]
             journal['attempted_create']=not any(r.get('remark')==marker(self.state,self.profile) for r in self.api.inbounds());self.save_journal(journal)
-            row,created=ensure(self.api,self.state,self.profile,cache)
+            if migration:
+                journal['original_profile']=migration['original_profile']
+                journal['migration']=migration
+                journal['attempted_create']=False
+                self.save_journal(journal)
+                from reality_migration import apply
+                row=apply(self.api,migration);created=False
+                validate_existing(row,self.state,self.profile,cache)
+            else:row,created=ensure(self.api,self.state,self.profile,cache)
             journal['created_id']=row['id'] if created else None;self.save_journal(journal)
             cache['inbound_id']=row['id'];private_json(self.root/'secrets/managed-xray.json',cache)
-            changed=created
+            changed=created or migration is not None
             if self.profile['topology']=='relay':
                 before=self.api.template();after=relay_template(before,row['tag'],remote)
                 journal['original_template']=before
@@ -223,7 +246,7 @@ class Engine:
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',choices=('configure','check','recover','profile-init','import-peer','login-check','version-check','cf-check','profile-info'))
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',choices=('configure','check','recover','profile-init','import-peer','login-check','version-check','cf-check','profile-info','migrate-inbound-reality'))
     parser.add_argument('root');parser.add_argument('--mode');parser.add_argument('--topology',default='standalone');parser.add_argument('--base',default='http://127.0.0.1:2053');args=parser.parse_args();root=Path(args.root)
     if args.command=='profile-info':
         value=profile(root);print('active' if value and value['active'] else 'pending' if value else 'missing');return
@@ -249,7 +272,7 @@ def main():
         if row is None:raise SetupError('Managed inbound is missing')
         validate_existing(row,engine.state,engine.profile,cache);engine.actual_bindings();engine.verify_internal(cache);engine.verify_public(cache)
         print('Xray API, inbound, Docker publication and real authenticated client transfer: PASSED');return
-    result=engine.provision(public=True);print('Automatic Xray configuration verified; inbound id '+str(result['inbound_id'])+'. Client secrets saved under '+str(root/'clients'))
+    result=engine.provision(public=True,migrate=args.command=='migrate-inbound-reality');print('Automatic Xray configuration verified; inbound id '+str(result['inbound_id'])+'. Client secrets saved under '+str(root/'clients'))
 
 if __name__=='__main__':
     def interrupted(signum,frame):raise SetupError('Transport configuration interrupted')

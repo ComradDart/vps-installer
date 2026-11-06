@@ -56,3 +56,23 @@ UFW защищает host; DOCKER-USER guard ограничивает forwarded 
 по original destination TCP80/443. Native nftables backend Docker не поддерживается;
 iptables-nft frontend с Docker iptables backend допустим. Проверяются реальные
 PortBindings и listeners, Engine >=28. Внешний scan и host lifecycle требуют VPS.
+
+## INBOUND и миграция gRPC → REALITY
+
+Новый INBOUND имеет клиентский REALITY/Vision; gRPC выбирается на OUTBOUND либо
+используется в переданном OUTBOUND-профиле relay. Public TCP443 у Xray, target
+`nginx:8443`; собственный домен INBOUND должен быть DNS-only A на origin.
+
+`--migrate-inbound-reality` обновляет существующий managed inbound через официальный
+update API. Сохраняются id, UUID всех клиентов и исходный routing tag. Upstream
+при смене порта автоматически меняет auto tag: миграция проходит через зарезервированный
+временный custom tag, затем возвращает исходный tag с новым портом. Обе операции
+пользуются штатной синхронизацией ссылок в routing, без ручного патчинга БД.
+
+API updateInbound в 3.11.0 сохраняет stored clients и игнорирует переданные изменения
+flow. Поэтому Vision выставляется через clients/update с inboundIds-фильтром.
+Общие metadata/лимиты читаются свежими из clients/get, чтобы не сбросить их вместе
+с flow. Снимок исходного inbound/profile/cache включён в приватный journal до записи.
+Rollback возвращает original transport/tag/flow и портовые привязки; пользовательские
+изменения квот сохраняются. Смена identity/неожиданного транспорта блокирует rollback
+с сохранением journal. Недостающие OUTBOUND-параметры не придумываются.

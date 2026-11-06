@@ -4,12 +4,11 @@ transport_select() {
     status=$(python3 "$APP/helpers/automation.py" profile-info "$ROOT")
     [[ $status == missing ]] || return 0
     if [[ $ROLE == inbound ]]; then
-        printf 'INBOUND topology:\n1. Standalone server\n2. Relay to an existing OUTBOUND\n'
+        mode=direct-reality
+        log 'INBOUND: VLESS/REALITY/Vision on TCP443; nginx self-steal target on internal 8443. Use DNS only for this hostname.'
+        printf 'INBOUND topology:\n1. Relay to an existing OUTBOUND\n2. Standalone server\n'
         ask choice Topology 1
-        case "$choice" in 1) topology=standalone;; 2) topology=relay;; *) die 'Choose 1 or 2';; esac
-        printf 'Client transport:\n1. VLESS/gRPC/TLS through nginx\n2. VLESS/REALITY/Vision\n'
-        ask choice Transport 1
-        case "$choice" in 1) mode=direct-grpc;; 2) mode=direct-reality;; *) die 'Choose 1 or 2';; esac
+        case "$choice" in 1) topology=relay;; 2) topology=standalone;; *) die 'Choose 1 or 2';; esac
     else
         printf 'OUTBOUND transport:\n1. cloudflare-grpc\n2. direct-reality\n'
         ask choice Transport 1
@@ -49,6 +48,20 @@ configure_xray() {
     python3 "$APP/helpers/automation.py" configure "$ROOT"
     state_set phase ready
     log "Verified client profile: $ROOT/clients/vless.txt (root-only). Use --show-client in an interactive terminal."
+}
+migrate_inbound_reality() {
+    require_docker
+    [[ $ROLE == inbound ]] || die 'This command is only for the INBOUND server'
+    backup_stack
+    install_app
+    log 'Migrating the managed INBOUND to REALITY/Vision; existing client UUIDs and OUTBOUND route are preserved. Public TCP443 moves from nginx to Xray.'
+    local topology
+    topology=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["topology"])' "$ROOT/transport.json")
+    if [[ $topology == standalone ]]; then warn 'Saved topology is standalone: direct egress. This conversion does not add an OUTBOUND route.'; fi
+    state_set phase ssh-ready
+    python3 "$APP/helpers/automation.py" migrate-inbound-reality "$ROOT"
+    state_set phase ready
+    log 'INBOUND REALITY verified. Import the updated profile from --show-client; existing gRPC device profiles must be updated.'
 }
 show_client() {
     [[ -s $ROOT/clients/vless.txt ]] || die 'No verified client profile; run --configure-xray'

@@ -56,3 +56,19 @@
 - Прервите --configure-xray после записи API и после замены Compose. Повторный
   запуск должен восстановить предыдущие файлы/собственные API-изменения и тот же UUID.
 - Проверьте /opt/vps-installer/automation-report.json и root-only права secrets/clients.
+
+Для старого managed gRPC на INBOUND:
+
+1. Зафиксировать inbound id/tag, UUID всех клиентов, лимиты и существующий OUTBOUND-маршрут.
+2. Домен INBOUND: DNS-only A на его IPv4, HTTPS-сертификат сайта готов.
+3. Запустить --migrate-inbound-reality. Проверить, что id/tag/UUID сохранены, clients flow
+   стал xtls-rprx-vision, network tcp, security reality, target nginx:8443.
+4. В Docker PortBindings public TCP443 принадлежит только xui; nginx остаётся на
+   внутреннем TLS8443. TCP10000 и UDP80/443 не опубликованы.
+5. Обычный HTTPS-клиент к домену INBOUND видит сайт через REALITY self-steal.
+   Новый VLESS-профиль импортируется в устройство и передаёт данные через выбранный OUTBOUND.
+6. Повтор команды сохраняет ключи/UUID. На snapshot-копии вызвать ошибку после handoff:
+   должны восстановиться старые API/flow/Compose/nginx/profile без потери клиентов.
+
+Полный сценарий миграции в песочнице пока не пройден из-за ENOSPC; unit-модель
+отката и отдельные успешные gRPC/REALITY подключения его не заменяют.

@@ -24,6 +24,7 @@ Usage: sudo ./install.sh [command]
   --reconfigure            Explicitly update site title/text; other identity stays fixed
   --reset-3xui-password     Change only existing panel admin credentials (brief xui stop)
   --configure-xray         Automatically configure and verify the selected Xray transport
+  --migrate-inbound-reality Convert the managed INBOUND to REALITY/Vision, retaining UUIDs
   --show-client            Show verified VLESS URI only on an interactive terminal
   --backup                 Consistent SQLite/local configuration backup
   --restore /absolute/file.tar.gz
@@ -139,7 +140,7 @@ main() {
             [[ $# == 3 ]] || die 'Use --probe-route HOST PORT'
             exec python3 "$APP/helpers/probe.py" "$2" "$3";;
         --restore) [[ $# == 2 ]] || die 'Use --restore /absolute/backup.tar.gz';;
-        ''|--status|--check|--configure-xray|--show-client|--reconfigure|--reset-3xui-password|--reset-3xui-credentials|--backup|--uninstall|--apply-docker-firewall|--renew)
+        ''|--status|--check|--configure-xray|--migrate-inbound-reality|--show-client|--reconfigure|--reset-3xui-password|--reset-3xui-credentials|--backup|--uninstall|--apply-docker-firewall|--renew)
             (( $# <= 1 )) || die 'Unexpected arguments';;
         *) die 'Unknown command; see --help';;
     esac
@@ -149,6 +150,7 @@ main() {
     case "$1" in
         --status) status_stack;;
         --configure-xray) configure_xray;;
+        --migrate-inbound-reality) migrate_inbound_reality;;
         --show-client) show_client;;
         --check) check_stack;;
         --reconfigure) reconfigure_site;;
