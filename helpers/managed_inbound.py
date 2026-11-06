@@ -42,6 +42,7 @@ def planned_cache(root,api,state,profile):
 def payload(state,profile,cache):
     reality=profile['mode']=='direct-reality'
     client={'id':cache['uuid'],'flow':'xtls-rprx-vision' if reality else '', 'email':cache['email'],'enable':True,'limitIp':0,'totalGB':0,'expiryTime':0}
+    if state['role']=='inbound':client['subId']=cache['uuid'].replace('-','')
     if reality:
         stream={'network':'tcp','security':'reality','realitySettings':{'show':False,'target':'nginx:8443','xver':0,'serverNames':[state['domain']],'privateKey':cache['private_key'],'shortIds':[cache['short_id']],'settings':{'publicKey':cache['public_key'],'fingerprint':'chrome','serverName':state['domain'],'spiderX':'/'}}}
     else:stream={'network':'grpc','security':'none','grpcSettings':{'serviceName':SERVICE,'multiMode':False}}

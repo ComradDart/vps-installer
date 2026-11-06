@@ -260,3 +260,45 @@ cache, без изменения OUTBOUND-профиля. Конфликт по�
 - Воспроизведение: `bash scripts/test_panel_ssh.sh`; реализация сценария —
   `tests/integration/panel_ssh_scenario.py`. Не запускать этот сценарий напрямую на VPS: 
   он создаёт тестовые Linux-учётные записи.
+
+
+## Публичные ссылки INBOUND / REALITY (7 ноября 2026, Москва)
+
+Область по последнему уточнению: только INBOUND. OUTBOUND и gRPC не изменялись.
+Latest сохранён; API-адаптер проверяет совместимость с контрактом 3.11.0.
+
+- **PASSED:** 10 точечных тестов за 12.40 секунд: один сетевой/browser сценарий
+  настоящей панели, три проверки конфигурации и шесть существующих проверок
+  share-address. Полный набор тестов заново не запускался.
+- Настоящий официальный release-бинарник 3x-ui 3.11.0 запускался с отдельной
+  временной БД. База изменялась только официальными API; SQL-правок нет.
+- Получены настоящие `/panel/api/clients/subLinks/:subId` и raw/base64 subscription
+  с фактическим случайным subPath. Проверены Address=PUBLIC_DOMAIN, порт443,
+  security=reality, flow клиента, существующие SNI/Short ID и выведенный из
+  текущего private key корректный непустой pbk.
+- Ответы API одинаковы с Host localhost, 127.0.0.1, Docker-IP и внешним hostname.
+  В Chromium выполнен настоящий login через localhost и 127.0.0.1. Штатный QR
+  VLESS из React UI декодирован ZXing и совпадает с ответом panel API. Для чтения
+  используется точный SVG панели, перерисованный без анимации; собственный QR
+  тест не генерирует.
+- Повтор сохраняет один Host group, UUID/subId, flow, private key, Short IDs и
+  внутренние listener/tag/port. Проверены PUBLIC_DOMAIN/root-only state и отказ
+  от работы с OUTBOUND до вызова его API.
+- Через настоящее Settings API подтверждены публичные subURI и неизменный
+  webDomain. nginx-файлы в этой export-only fixture моделируются; вызовы nginx
+  validation/reload заменены заглушкой. В production они выполняются до/при
+  применении; ошибка запускает откат API metadata/settings и nginx-файлов.
+- **NOT RUN:** публичная подписка через nginx и REALITY self-steal, реальная
+  передача пользовательского трафика в этой новой проверке, deployment на VPS.
+  Xray не запускался: тест проверяет настоящий экспорт/UI панели, а не VPN E2E.
+  Docker-образ в этом прогоне не запускался из-за ограничения диска среды.
+
+Воспроизведение (Python pytest/playwright/Pillow/zxing-cpp и Chromium):
+`XUI_EXPORT_BINARY=/absolute/path/to/official/x-ui python3 -m pytest tests/integration/test_public_links.py -q`.
+Без переменной интеграционная проверка явно SKIPPED/NOT RUN.
+
+Официальные источники контракта v3.11.0: internal/web/controller/host.go,
+internal/web/entity/entity.go (HostGroup), internal/sub/host_sub.go,
+internal/web/controller/setting.go, internal/web/service/setting.go,
+frontend/src/pages/clients/ClientQrModal.tsx и pages/inbounds/qr/QrPanel.tsx
+в https://github.com/MHSanaei/3x-ui/tree/v3.11.0 .

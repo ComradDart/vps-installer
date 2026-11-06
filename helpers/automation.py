@@ -269,7 +269,7 @@ class Engine:
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',choices=('configure','check','recover','profile-init','import-peer','login-check','version-check','cf-check','profile-info','migrate-inbound-reality','check-client','show-client-for'))
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',choices=('configure','check','recover','profile-init','import-peer','login-check','version-check','cf-check','profile-info','migrate-inbound-reality','check-client','show-client-for','repair-links'))
     parser.add_argument('root');parser.add_argument('--mode');parser.add_argument('--client-email');parser.add_argument('--topology',default='standalone');parser.add_argument('--base',default='http://127.0.0.1:2053');args=parser.parse_args();root=Path(args.root)
     if args.command=='profile-info':
         value=profile(root);print('active' if value and value['active'] else 'pending' if value else 'missing');return
@@ -286,6 +286,10 @@ def main():
     docker=Docker()
     if args.command=='version-check':docker.version();return
     api,version=authenticated_api(root,docker,args.base);engine=Engine(root,api,docker,version)
+    if args.command=='repair-links':
+        from public_links import repair
+        count=repair(api,root,engine.state,engine.profile,docker)
+        print('Native 3x-ui public endpoint configured; panel-generated client exports verified: '+str(count));return
     if args.command in ('check-client','show-client-for'):
         if not args.client_email:raise SetupError('Client email is required')
         from client_tools import check_selected,show_selected
@@ -309,7 +313,11 @@ def main():
         print('Checking VLESS connection through the public server address...',flush=True)
         engine.verify_public(cache)
         print('Xray API, inbound, Docker publication and real authenticated client transfer: PASSED');return
-    result=engine.provision(public=True,migrate=args.command=='migrate-inbound-reality');print('Automatic Xray configuration verified; inbound id '+str(result['inbound_id'])+'. Client secrets saved under '+str(root/'clients'))
+    result=engine.provision(public=True,migrate=args.command=='migrate-inbound-reality')
+    if engine.state['role']=='inbound':
+        from public_links import repair
+        repair(api,root,engine.state,engine.profile,docker)
+    print('Automatic Xray configuration verified; inbound id '+str(result['inbound_id'])+'. Client secrets saved under '+str(root/'clients'))
 
 if __name__=='__main__':
     def interrupted(signum,frame):raise SetupError('Transport configuration interrupted')

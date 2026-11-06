@@ -8,10 +8,11 @@ def domain(s):
     return bool(len(s)<=253 and '.' in s and not re.fullmatch(r'[0-9.]+',s) and
                 all(re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?',p) for p in s.split('.')))
 def validate(d):
-    assert set(d)==FIELDS, 'Unknown or missing state fields'
+    assert set(d) in (FIELDS,FIELDS|{'PUBLIC_DOMAIN'}), 'Unknown or missing state fields'
     assert d['schema']=='1'
     assert d['role'] in ('inbound','outbound')
     assert domain(d['domain'])
+    assert d.get('PUBLIC_DOMAIN',d['domain'])==d['domain'], 'PUBLIC_DOMAIN must match this VPS domain'
     assert re.fullmatch(r'[a-z][a-z0-9_-]{0,30}',d['admin']) and d['admin']!='root'
     assert re.fullmatch(r'[1-9][0-9]{0,4}',d['ssh_port']) and int(d['ssh_port'])<=65535
     assert int(d['ssh_port']) not in (80,443,2053,8443)
@@ -23,7 +24,9 @@ def validate(d):
     for k in ('title','text'): assert 1<=len(d[k])<=1000 and not any(ord(c)<32 for c in d[k])
     assert d['phase'] in ('configured','ssh-ready','ready')
 def write(path,d):
-    validate(d);path=Path(path)
+    validate(d)
+    if d['role']=='inbound':d.setdefault('PUBLIC_DOMAIN',d['domain'])
+    path=Path(path)
     fd,tmp=tempfile.mkstemp(prefix='.state-',dir=path.parent)
     try:
         with os.fdopen(fd,'w') as f:
@@ -39,7 +42,9 @@ def main():
     if op=='create':
         d=json.load(sys.stdin);write(path,d);return 0
     d=json.loads(Path(path).read_text());validate(d)
-    if op=='get': print(d[sys.argv[3]])
+    if op=='ensure-public-domain':
+        if d['role']=='inbound' and 'PUBLIC_DOMAIN' not in d:write(path,d)
+    elif op=='get': print(d[sys.argv[3]])
     elif op=='set': d[sys.argv[3]]=sys.argv[4];write(path,d)
     elif op!='validate': raise ValueError('Invalid operation')
     return 0

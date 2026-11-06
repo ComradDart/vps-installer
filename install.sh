@@ -30,6 +30,7 @@ Usage: sudo ./install.sh [command]
   --migrate-inbound-reality Convert the managed INBOUND to REALITY/Vision, retaining UUIDs
   --show-client            Show verified VLESS URI only on an interactive terminal
   --panel-users            Manage individual SSH keys/tunnel-only Linux accounts
+  --repair-client-links    Repair panel-generated public links/QR without changing Xray
   --backup                 Consistent SQLite/local configuration backup
   --restore /absolute/file.tar.gz
                            Restore same stack identity, preserving current host SSH/UFW
@@ -50,7 +51,7 @@ collect_state() {
     ask SSH_PORT 'SSH TCP port (existing port is retained during verification)' 22
     valid_port "$SSH_PORT" || die 'Invalid SSH port'
     case "$SSH_PORT" in 80|443|2053|8443) die 'SSH port conflicts with the managed stack';; esac
-    ask DOMAIN 'Own domain (ASCII/punycode, no URL prefix; apex allowed)'
+    ask DOMAIN 'Public domain / PUBLIC_DOMAIN (ASCII/punycode, no URL prefix; apex allowed)'
     DOMAIN=${DOMAIN,,}; valid_domain "$DOMAIN" || die 'Invalid domain'
     ask PUBLIC_IP 'Origin IPv4 of this VPS (Cloudflare Proxy may return different public DNS addresses)'
     ask EMAIL "Let's Encrypt email"
@@ -145,7 +146,7 @@ main() {
             exec python3 "$APP/helpers/probe.py" "$2" "$3";;
         --restore) [[ $# == 2 ]] || die 'Use --restore /absolute/backup.tar.gz';;
         --check-xray-client|--show-client-for) [[ $# == 2 && -n $2 ]] || die 'Specify the client email shown in the panel';;
-        ''|--status|--check|--check-xray|--configure-xray|--migrate-inbound-reality|--show-client|--panel-users|--reconfigure|--reset-3xui-password|--reset-3xui-credentials|--backup|--uninstall|--apply-docker-firewall|--renew)
+        ''|--status|--check|--check-xray|--configure-xray|--migrate-inbound-reality|--show-client|--panel-users|--repair-client-links|--reconfigure|--reset-3xui-password|--reset-3xui-credentials|--backup|--uninstall|--apply-docker-firewall|--renew)
             (( $# <= 1 )) || die 'Unexpected arguments';;
         *) die 'Unknown command; see --help';;
     esac
@@ -154,6 +155,7 @@ main() {
     load_state
     case "$1" in
         --panel-users) install_app; python3 "$APP/helpers/panel_users.py" menu "$ROOT";;
+        --repair-client-links) [[ $ROLE == inbound ]] || die 'This repair is only for INBOUND'; require_docker; install_app; python3 "$APP/helpers/automation.py" repair-links "$ROOT";;
         --status) status_stack;;
         --configure-xray) configure_xray;;
         --migrate-inbound-reality) migrate_inbound_reality;;

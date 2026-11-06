@@ -27,6 +27,33 @@ OUTBOUND также позволяет отдельно выбрать direct-re
 
 ## Доступ друзей к панели через SSH
 
+### Исправить localhost в ссылках INBOUND
+
+Только для **INBOUND / REALITY**. На уже установленном сервере:
+
+```bash
+curl -fL https://raw.githubusercontent.com/ComradDart/vps-installer/main/get.sh -o vps-bootstrap.sh
+sudo bash vps-bootstrap.sh --repair-client-links
+```
+
+После этого обновите страницу панели и заново откройте QR. Публичный Address
+берётся из сохранённого домена VPS (`PUBLIC_DOMAIN` в root-only state.json).
+Установщик задаёт штатные **Custom share address + Hosts** через API 3x-ui;
+копирование ссылки и QR больше не зависят от localhost SSH-туннеля.
+SNI, `pbk`, `sid` и flow берутся из действующего REALITY. UUID, приватные ключи,
+Short IDs, клиентские настройки и пароль панели сохраняются. При первой установке
+INBOUND это выполняется автоматически; существующие subId не заменяются.
+
+Также задаются публичные URL подписок через штатные `subURI`/`subJsonURI` и
+добавляются их существующие пути в nginx с проксированием к внутреннему серверу
+подписок. Публичные порты Docker и UFW не добавляются. `webDomain` не меняется;
+`subDomain` не используется как замена публичного Address: это hostname-фильтр
+subscription-сервера. Чужие Host rules и нестандартный TLS subscription-сервера
+приводят к остановке с сохранением конфигурации.
+
+OUTBOUND и его gRPC-конфигурация этой командой не изменяются. Образы остаются latest.
+Контракт и ограничения проверки описаны в [отчёте](docs/TEST-REPORT.md).
+
 На уже установленном INBOUND или OUTBOUND обновите только инструменты управления
 и откройте меню (полная установка и настройка Xray не запускаются):
 

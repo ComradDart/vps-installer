@@ -52,6 +52,7 @@ load_state() {
     [[ -f $STATE && ! -L $STATE ]] || die "Missing or symlink state: $STATE"
     [[ $(stat -c %u "$STATE") == 0 && $(stat -c %a "$STATE") == 600 ]] || die 'State must be root-owned, mode 600'
     python3 "$APP/helpers/state.py" validate "$STATE"
+    python3 "$APP/helpers/state.py" ensure-public-domain "$STATE"
     ROLE=$(state_get role); DOMAIN=$(state_get domain)
     ADMIN=$(state_get admin); SSH_PORT=$(state_get ssh_port); PUBLIC_IP=$(state_get public_ip)
     EMAIL=$(state_get email); SUBNET=$(state_get subnet)
