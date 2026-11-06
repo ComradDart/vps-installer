@@ -42,16 +42,18 @@ reload_ssh() {
     systemctl reload-or-restart ssh.service
 }
 ssh_effective() {
-    local effective key value client
+    local effective key value client actual
     client=${SSH_CONNECTION:-127.0.0.1}; client=${client%% *}
     effective=$(/usr/sbin/sshd -T -C "user=$ADMIN,host=$DOMAIN,addr=$client")
-    for key in permitrootlogin:no passwordauthentication:no pubkeyauthentication:yes kbdinteractiveauthentication:no x11forwarding:no maxauthtries:3; do
+    for key in passwordauthentication:no pubkeyauthentication:yes kbdinteractiveauthentication:no x11forwarding:no maxauthtries:3; do
         value=${key#*:}; key=${key%%:*}
-        rg -q "^$key $value$" <<<"$effective" || die "Effective SSH setting differs: $key. Inspect main config, earlier drop-ins and Match blocks."
+        actual=$(awk -v key="$key" '$1==key {print $2}' <<<"$effective")
+        [[ $actual == "$value" ]] || die "Effective SSH $key=${actual:-missing}; expected $value. An earlier setting or Match block overrides the managed config; pending changes will be rolled back."
     done
     rg -q "^port $SSH_PORT$" <<<"$effective" || die 'Selected SSH port missing from effective configuration'
     effective=$(/usr/sbin/sshd -T -C "user=root,host=$DOMAIN,addr=$client")
-    rg -q '^permitrootlogin no$' <<<"$effective" || die 'A Match block still permits root SSH'
+    actual=$(awk '$1=="permitrootlogin" {print $2}' <<<"$effective")
+    [[ $actual == no ]] || die "Effective SSH permitrootlogin=${actual:-missing} for root; expected no. Inspect earlier drop-ins (especially 00-custom-root.conf), main config and Match blocks; pending changes will be rolled back."
 }
 ssh_gate() {
     local token reply
@@ -72,16 +74,17 @@ setup_ssh() {
     if [[ $(state_get phase) != configured ]]; then ssh_effective; return 0; fi
     local oldports
     oldports=$(/usr/sbin/sshd -T | awk '$1=="port" {print $2}')
+    # OpenSSH takes the first value: sort before provider 00-custom-root.conf.
     # Entire SSH tree backed up; rollback touches only this installer's drop-in.
-    if [[ -f /etc/ssh/sshd_config.d/00-vps-installer.conf ]]; then
-        cp -a /etc/ssh/sshd_config.d/00-vps-installer.conf "$ROOT/ssh-before.conf"
+    if [[ -f /etc/ssh/sshd_config.d/00-00-vps-installer.conf ]]; then
+        cp -a /etc/ssh/sshd_config.d/00-00-vps-installer.conf "$ROOT/ssh-before.conf"
     else rm -f "$ROOT/ssh-before.conf"; fi
     cat >"$ROOT/ssh-rollback.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ -f /opt/vps-installer/ssh-before.conf ]]; then
-    cp -a /opt/vps-installer/ssh-before.conf /etc/ssh/sshd_config.d/00-vps-installer.conf
-else rm -f /etc/ssh/sshd_config.d/00-vps-installer.conf; fi
+    cp -a /opt/vps-installer/ssh-before.conf /etc/ssh/sshd_config.d/00-00-vps-installer.conf
+else rm -f /etc/ssh/sshd_config.d/00-00-vps-installer.conf; fi
 /usr/sbin/sshd -t
 systemctl daemon-reload
 if systemctl is-active --quiet ssh.socket; then systemctl restart ssh.socket; fi
@@ -95,10 +98,10 @@ EOF
         printf 'Port %s\n' "$SSH_PORT"
         while read -r p; do [[ $p == "$SSH_PORT" ]] || printf 'Port %s\n' "$p"; done <<<"$oldports"
         printf 'PubkeyAuthentication yes\n'
-    } >/etc/ssh/sshd_config.d/00-vps-installer.conf
+    } >/etc/ssh/sshd_config.d/00-00-vps-installer.conf
     reload_ssh
     ssh_gate
-    cat >/etc/ssh/sshd_config.d/00-vps-installer.conf <<EOF
+    cat >/etc/ssh/sshd_config.d/00-00-vps-installer.conf <<EOF
 Port $SSH_PORT
 PermitRootLogin no
 PasswordAuthentication no

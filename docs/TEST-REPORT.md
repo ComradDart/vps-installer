@@ -10,7 +10,7 @@ amd64. Это наблюдавшиеся версии, а не закрепле�
 
 ## Статус
 
-- **PASSED:** Bash syntax, ShellCheck и 103 unit/negative теста.
+- **PASSED:** Bash syntax, ShellCheck и 107 unit/negative теста.
 - **PASSED:** настоящий gRPC/TLS → nginx → Xray data transfer; API creation,
   повторный запуск без дубликатов и сохранение UUID, проверка port owner/10000.
 - **PASSED:** реальный отказ клиентской передачи → откат файлов/inbound/созданного
@@ -104,3 +104,22 @@ RUN_DOCKER_INTEGRATION=1 ./tests/run.sh
 Зависимости перечислены в tests/requirements.txt; ShellCheck также нужен.
 Тесты создают только свои Docker-ресурсы и удаляют их при завершении.
 Для VFS нужен достаточный свободный диск; одновременные прогоны не рекомендуются.
+
+## Исправление SSH precedence (6 ноября 2026)
+
+В конфигурации пользователя `00-custom-root.conf` задавал PermitRootLogin yes и
+PasswordAuthentication yes раньше прежнего `00-vps-installer.conf`. OpenSSH брал
+первое значение, и установка правильно останавливалась до reload lockdown.
+
+- Managed drop-in переименован в `00-00-vps-installer.conf`, раньше provider файла.
+  Снимок, staging, финальная запись и rollback используют один и тот же новый путь.
+- Provider/cloud-image файлы сохраняются. Проверка PermitRootLogin выполняется для
+  root; ошибки показывают фактическое и ожидаемое значение.
+- **PASSED:** 107 unit/negative тестов, Bash syntax и ShellCheck.
+- 4 новых тестовых случая используют настоящий OpenSSH 10.0p2 Debian-7+deb13u4
+  в режиме разбора временного конфига: воспроизведение прежнего конфликта,
+  исправленный приоритет, обнаружение Match override и два варианта реального
+  восстановления файлов rollback (с прежним managed файлом / без него).
+  Служба SSH песочницы не запускалась и не перезагружалась.
+- Внешние SSH-сессии и systemd timer на VPS остаются MANUAL; Docker/Cloudflare
+  повторно для этого изменения не проверялись. Их ограничения выше сохраняются.
