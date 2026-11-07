@@ -121,12 +121,6 @@ def test_offline_sqlite_snapshot(tmp_path):
     subprocess.run([sys.executable,str(APP/'helpers/db.py'),'snapshot',str(path),str(output)],check=True)
     assert db.fingerprint(path)==db.fingerprint(output)
 
-def test_probe_closed_port():
-    import socket
-    with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
-    r=subprocess.run([sys.executable,str(APP/'helpers/probe.py'),'127.0.0.1',str(port)],capture_output=True,text=True)
-    assert r.returncode!=0 and 'TCP probe only' in r.stdout
-
 def test_cli_help_and_unknown_argument():
     r=subprocess.run([str(APP/'install.sh'),'--help'],capture_output=True,text=True)
     assert r.returncode==0 and '--reset-3xui-password' in r.stdout

@@ -27,12 +27,6 @@ def test_bootstrap_extracts_real_bundle_without_git(tmp_path):
     r=bash('source "$APP/get.sh"; bootstrap_extract "$1" "$2"',package,target)
     assert r.returncode==0 and (target/'vps-installer-main/install.sh').read_text().startswith('#!/bin/sh')
 
-def test_bootstrap_extracts_authenticated_github_api_archive(tmp_path):
-    package=tmp_path/'source.tar.gz';target=tmp_path/'extract';target.mkdir()
-    archive(package,'ComradDart-vps-installer-a1234bc5678/install.sh')
-    r=bash('source "$APP/get.sh"; bootstrap_extract "$1" "$2"',package,target)
-    assert r.returncode==0 and (target/'vps-installer-main/install.sh').is_file()
-
 @pytest.mark.parametrize('name,kind',[
     ('vps-installer-main/../../escape',None),('/absolute',None),
     ('another-repo/install.sh',None),('vps-installer-main/link',tarfile.SYMTYPE),

@@ -32,9 +32,17 @@ def create(root,backups):
         with tarfile.open(temp/'system.tar.gz','w:gz',dereference=False) as tar:
             for name in ('/etc/ssh','/etc/ufw','/etc/fail2ban','/etc/apt/apt.conf.d','/etc/sysctl.d','/etc/vps-setup.conf'):
                 if Path(name).exists():tar.add(name,arcname=name.lstrip('/'))
+            # Optional native manager: configuration/secrets only, never its recursive
+            # backups or downloaded binaries. System snapshot is for manual recovery.
+            manager=Path('/opt/mtproxyl')
+            for name in ('settings.conf','secrets.conf','upstreams.conf','expert.conf','mtproxy/telemt.toml'):
+                path=manager/name
+                if path.is_file() and not path.is_symlink():tar.add(path,arcname=str(path).lstrip('/'))
+            unit=Path('/etc/systemd/system/mtproxyl-telemt.service')
+            if unit.is_file() and not unit.is_symlink():tar.add(unit,arcname=str(unit).lstrip('/'))
         # Legacy data are only read, never stopped/deleted/imported. SQLite files
         # are backed up via sqlite3.backup; this is not a distributed snapshot.
-        for index,legacy in enumerate(('/opt/3x-ui','/opt/nginx-panel','/opt/telemt','/opt/mtproxyl','/etc/amnezia')):
+        for index,legacy in enumerate(('/opt/3x-ui','/opt/nginx-panel')):
             if Path(legacy).is_dir():snapshot_tree(Path(legacy),temp/('legacy-'+str(index)))
         pending=temp/'archive.tmp'
         with tarfile.open(pending,'w:gz',dereference=False) as tar:

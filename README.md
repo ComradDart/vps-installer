@@ -1,186 +1,214 @@
 # VPS Installer
 
-Установка и обслуживание двух VPS с Docker, 3x-ui, nginx и HTTPS-сайтом.
-Настройка VLESS выполняется через официальный API панели. Устройства подключаются
-к INBOUND; он работает самостоятельно или передаёт трафик на заданный OUTBOUND.
-
-Оба сервера развёрнуты и работают — подтверждено владельцем проекта.
-Контейнерные образы всегда **latest**:
+Два VPS: входной в РФ и выходной за рубежом.
 
 ```text
-ghcr.io/mhsanaei/3x-ui:latest
-nginx:latest
+Клиент → INBOUND :443 (VLESS/REALITY)
+       → Cloudflare → OUTBOUND :443 (VLESS/gRPC/TLS)
+       → nginx → Xray :10000 → интернет
 ```
 
-## Схема
+На обоих узлах: SSH по ключам, sudo-пользователь `vpsadmin`, UFW, fail2ban,
+обновления безопасности, chrony, Docker, 3x-ui/Xray, nginx, сайт, Let's Encrypt
+с продлением и ежедневный backup. Панель — только `127.0.0.1:2053` через SSH.
+Образы — **latest**. Опционально: Telegram-прокси telemt/MTProxyL на INBOUND :9443.
 
-| Сервер | Подключение устройств / транспорт | Публичный TCP/443 |
-|---|---|---|
-| INBOUND | VLESS + REALITY + Vision; свой домен, DNS only | Xray в 3x-ui |
-| OUTBOUND | VLESS + gRPC + TLS через Cloudflare | nginx |
-
-Типичный маршрут: **устройство → INBOUND REALITY → Cloudflare → OUTBOUND gRPC → Интернет**.
-INBOUND также поддерживает standalone. OUTBOUND можно установить в direct-reality.
-Для relay нужны готовая VLESS-ссылка OUTBOUND и его выходной IPv4.
-
-На INBOUND nginx обслуживает сайт внутри Docker на `8443` и служит REALITY
-self-steal target (`nginx:8443`). На OUTBOUND сайт работает на `/`, а
-`/vlessgrpc/Tun` проксируется к `xui:10000`. Панель на обоих серверах доступна
-только через **127.0.0.1:2053 хоста и SSH-туннель**.
-
-## Требования
+## Подготовка
 
 - Debian 12/13 или Ubuntu 24.04/26.04 LTS, systemd, amd64/arm64.
-- Доступ root/sudo, минимум 4 GiB свободного места, консоль провайдера для восстановления.
-- Свой публичный домен для каждой VPS; свободные TCP 80/443 и выбранный SSH-порт.
-- A-запись на IPv4 origin. Для прямого INBOUND — без origin AAAA и без Cloudflare Proxy.
+- На каждом VPS: публичный IPv4, рекомендуется от 1 ГиБ RAM; минимум 4 ГиБ свободно в `/opt`.
+- INBOUND: домен с A-записью на его IP, **DNS only**, без AAAA.
+- OUTBOUND: отдельный домен, Cloudflare **Proxied**, gRPC и HTTP/2 включены,
+  SSL/TLS **Full (strict)**. Рабочие настройки менять не требуется.
+- У провайдера открыты TCP80/443 и SSH-порт; для telemt дополнительно TCP9443.
+  Путь `/.well-known/acme-challenge/` должен проходить без кеша и WAF challenge.
+- Сохраните SSH-сессию и доступ к консоли провайдера. Чужие сервисы и данные
+  не удаляются; конфликт портов останавливает установку.
 
-Первый сертификат Let's Encrypt выпускается через HTTP-01 на TCP/80.
-Cloudflare должен пропускать ACME-путь без challenge/кэша. При проблемах первого
-выпуска временно используйте **DNS only**.
+## Установка
 
-Для OUTBOUND/cloudflare-grpc после выпуска сертификата включите в Cloudflare:
-**DNS → Proxied**, **SSL/TLS → Full (strict)**, **Network → gRPC On**, HTTP/2.
-Не применяйте challenge или разрушающие POST редиректы к `/vlessgrpc/*`.
+На VPS выберите **один** вариант. Git и GitHub-токен не нужны.
 
-## Получение и установка
-
-Репозиторий приватный: анонимные `raw.githubusercontent.com` и `codeload` ссылки
-не работают. Авторизуйтесь на [GitHub](https://github.com/ComradDart/vps-installer).
-
-**Без Git на VPS:** нажмите **Code → Download ZIP**, загрузите архив на сервер
-через SFTP/Termius и распакуйте. В каталоге с `install.sh` выполните:
+**curl:**
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y python3 util-linux
-sudo bash ./install.sh
+setup_file=$(mktemp)
+curl -fL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/ComradDart/vps-installer/main/get.sh -o "$setup_file" && sudo bash "$setup_file"
+rm -f "$setup_file"
 ```
 
-Выберите роль и следуйте мастеру. Для relay сначала подготовьте OUTBOUND и его
-клиентскую ссылку. Не закрывайте исходную SSH-сессию до завершения проверки входа
-нового sudo-пользователя в отдельном окне.
-
-Если Git и GitHub CLI уже настроены, можно получить исходники командой:
+**wget:**
 
 ```bash
-gh repo clone ComradDart/vps-installer
-cd vps-installer
-sudo bash ./install.sh
+setup_file=$(mktemp)
+wget --https-only -O "$setup_file" https://raw.githubusercontent.com/ComradDart/vps-installer/main/get.sh && sudo bash "$setup_file"
+rm -f "$setup_file"
 ```
 
-### Bootstrap без Git с авторизацией
+Скачивается опубликованная ветка `main`. Установленная копия:
+`/opt/vps-installer/app/install.sh`.
 
-Сохранённый из приватного репозитория `get.sh` умеет скачивать актуальный main
-через GitHub API. Нужен токен с **Contents: Read-only** только для этого репозитория:
+1. **Сначала OUTBOUND:** выберите роль `2`. Укажите его домен, origin IPv4,
+   SSH-порт, email для сертификата и публичный SSH-ключ. Подтвердите новый SSH-доступ
+   из второй сессии по подсказке установщика; старую не закрывайте.
+2. Получите ссылку: `sudo /opt/vps-installer/app/install.sh --show-client`.
+3. **Затем INBOUND:** запустите тот же установщик, выберите роль `1`, укажите
+   параметры этого VPS. В скрытый запрос вставьте ссылку OUTBOUND и задайте
+   ожидаемый внешний IPv4 OUTBOUND. Для telemt ответьте `yes`; Enter означает `no`.
+4. На обоих узлах: `sudo /opt/vps-installer/app/install.sh --check`.
+
+Inbound, UUID, nginx, gRPC, маршруты и публичные адреса ссылок настраиваются сами.
+Между VPS используется **домен OUTBOUND**, а не прямой зарубежный IP.
+При отказе выбранного outbound этот трафик не переключается на direct.
+
+## Подключить клиента
+
+На INBOUND выполните `sudo /opt/vps-installer/app/install.sh --show-client`
+либо возьмите ссылку/QR клиента в панели. Импортируйте в клиент с поддержкой
+VLESS/REALITY/Vision. Через прокси откройте `https://api4.ipify.org`: нужен IP OUTBOUND.
+Ссылку OUTBOUND обычным клиентам не выдавайте: она нужна для связи VPS.
+
+## Панель и доступ другим людям
+
+Каждый создаёт **свой ключ на своём компьютере**. Задайте парольную фразу.
+Если файл уже существует, выберите другое имя, чтобы не перезаписать его.
+
+Linux/macOS:
 
 ```bash
-read -rsp 'GitHub token: ' GH_TOKEN; printf '\n'
-export GH_TOKEN
-sudo --preserve-env=GH_TOKEN bash ./get.sh
-unset GH_TOKEN
+ssh-keygen -t ed25519 -a 64 -f ~/.ssh/3xui_key
+cat ~/.ssh/3xui_key.pub
 ```
 
-Токен не записывается в аргументы curl и не передаётся установщику. Временный
-root-only файл авторизации удаляется. Любую служебную команду можно передать после
-`get.sh`, например `--panel-users` или `--repair-client-links`.
+Windows PowerShell — нужен компонент «Клиент OpenSSH»:
 
-## Доступ к панели
-
-На компьютере с вашим SSH-ключом:
-
-```bash
-ssh -N -T -o ExitOnForwardFailure=yes \
-  -p SSH_PORT -i ~/.ssh/your_key \
-  -L 2053:127.0.0.1:2053 ADMIN@SERVER_IP
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.ssh" | Out-Null
+ssh-keygen -t ed25519 -a 64 -f "$env:USERPROFILE\.ssh\3xui_key"
+Get-Content "$env:USERPROFILE\.ssh\3xui_key.pub"
 ```
 
-Откройте **http://127.0.0.1:2053** и войдите под существующей учётной записью 3x-ui.
-Если ключ хранится в Termius, создайте там **Port Forwarding → Local** с тем же
-хостом/ключом: local port `2053`, destination `127.0.0.1`, destination port `2053`.
-Ключи Termius не появляются в Windows OpenSSH автоматически.
+Передайте администратору **только строку из `.pub`**. Приватный файл и его пароль
+на VPS не загружайте. Такой же ключ используется для `vpsadmin` при установке.
 
-Для приглашённых администраторов:
+Администратор на нужном VPS:
 
 ```bash
 sudo /opt/vps-installer/app/install.sh --panel-users
 ```
 
-Меню управляет отдельными Linux-пользователями и публичными SSH-ключами. Им доступен
-только туннель к панели: без shell, команд, SFTP, sudo, Docker и других forwarding.
-В 3x-ui остаётся **одна общая административная учётная запись**. Отзыв доступа
-закрывает активные туннели. [Подробная инструкция](docs/PANEL-USERS.md).
+Меню: **1** — добавить `panel_ivan` и его ключ; **2** — удалить; **3** — добавить
+или заменить ключи; **4** — список; **5** — команда подключения. Удаление пользователя
+или замена всех ключей завершают его открытые туннели. На втором VPS доступ добавляют отдельно.
 
-## Ссылки и QR на INBOUND
-
-Установщик сохраняет публичный домен как `PUBLIC_DOMAIN` и через штатные
-**Custom share address + Hosts** задаёт внешний Address, независимо от localhost,
-по которому открыта панель. REALITY SNI, `pbk`, `sid` и flow берутся из действующей
-конфигурации. Публичные URL подписок используют HTTPS-домен и nginx.
-
-Если на существующем INBOUND в ссылках остался localhost, выполните из актуальных
-исходников:
+На своём компьютере подставьте `SSH_PORT` и `SERVER_IP`:
 
 ```bash
-sudo bash ./install.sh --repair-client-links
+ssh -N -T -o ExitOnForwardFailure=yes -p SSH_PORT -i ~/.ssh/3xui_key -L 127.0.0.1:2053:127.0.0.1:2053 panel_ivan@SERVER_IP
 ```
 
-Обновите страницу и заново откройте QR. UUID, ключи REALITY, Short IDs, существующие
-subId и пароль панели сохраняются. Эта команда предназначена только для INBOUND.
+В Windows замените путь ключа на `"$env:USERPROFILE\.ssh\3xui_key"`.
+Администратор использует `vpsadmin` и свой ключ. Пока SSH открыт, панель доступна
+на **http://127.0.0.1:2053/**. Если порт занят, первое `2053` в `-L` замените
+на `12053` и откройте `http://127.0.0.1:12053/`.
 
-Для ручной правки откройте **Hosts → vps-installer:public:…**: Address — домен без
-схемы, Port — `443`, Security — `Same`. В inbound: **Share address strategy → Custom**,
-**Custom share address → домен**. SNI настраивается отдельно в REALITY Server Names.
-`webDomain` для исправления ссылок менять не нужно. Повтор repair вернёт сохранённый
-домен установщика; пути подписок должны совпадать с nginx.
+У приглашённых — только этот туннель, без shell, sudo, Docker, SFTP/SCP и других
+перенаправлений. В 3x-ui одна общая учётная запись; её пароль выдаёт администратор.
+Отзыв SSH-ключа не отзывает известный пароль панели и API-токены.
 
-## Обслуживание
+## Telegram-прокси — по желанию
 
-Установленная копия: `/opt/vps-installer/app/install.sh`.
+Согласитесь при установке INBOUND или подключите позднее:
 
-| Команда | Назначение |
+```bash
+sudo /opt/vps-installer/app/install.sh --telemt
+sudo mtproxyl secret link
+```
+
+Схема: **telemt :9443 → SOCKS 127.0.0.1:1080 → существующий VLESS outbound → OUTBOUND**.
+Маскировка — существующий сайт `127.0.0.1:8443`; direct разрешён только для `local-mask`.
+В ссылке — домен INBOUND и порт 9443. Порт 443 остаётся за VLESS/REALITY.
+
+`--telemt` сохраняет UUID, ключи, межсерверный outbound, nginx и настройки OUTBOUND.
+При добавлении Docker binding возможен короткий перезапуск только xui. Совместимый
+нативный MTProxyL принимается без переустановки и смены секретов. Конфликтующий
+Docker binding 9443 или другая установка вызывают ошибку, без удаления чужих данных.
+
+При новой установке скачиваются актуальные MTProxyL и нативный движок.
+WEB/Selfmask, Zapret2, Meko, WARP и дополнительные контейнеры не включаются.
+На VPS с малой RAM менеджер может создать swap. Приватный журнал:
+`/opt/vps-installer/telemt-install.log`. На OUTBOUND telemt не нужен.
+Ответ `no` не добавляет пакеты и порты; SOCKS, панель, API и метрики остаются локальными.
+
+## Обновление и backup
+
+**Обновить только скрипт**, сохранив конфиги, маршруты и контейнеры:
+
+```bash
+setup_file=$(mktemp)
+curl -fL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/ComradDart/vps-installer/main/get.sh -o "$setup_file" && sudo bash "$setup_file" --update
+rm -f "$setup_file"
+```
+
+Для wget используйте строку из установки, добавив `--update` после `sudo bash "$setup_file"`.
+Для Git: `cd ~/vps-installer && git pull --ff-only && sudo bash ./install.sh --update`.
+Если telemt уже настроен вручную, после обновления выполните `--telemt` на INBOUND,
+чтобы проверить и зарегистрировать его. Основную установку повторять не нужно.
+
+**Обновить контейнеры latest** в окно обслуживания:
+
+```bash
+sudo /opt/vps-installer/app/install.sh --backup
+sudo docker compose -p vps-installer -f /opt/vps-installer/compose.yml pull
+sudo docker compose -p vps-installer -f /opt/vps-installer/compose.yml up -d
+sudo /opt/vps-installer/app/install.sh --check
+```
+
+API проверен для 3x-ui 3.11.0. При изменении контракта latest автоматизация
+остановится до правки inbound; проверку версии не обходите вслепую.
+
+Backup: `/var/backups/vps-installer`. Данные: `/opt/vps-installer`, MTProxyL — `/opt/mtproxyl`.
+Архивы содержат секреты: копируйте их за пределы VPS с шифрованием. Повторная установка
+сохраняет пароль, клиентов, UUID, сертификаты и сайт. Восстановление той же роли,
+домена, IP, SSH-порта и режима telemt:
+
+```bash
+sudo /opt/vps-installer/app/install.sh --restore /var/backups/vps-installer/ARCHIVE.tar.gz
+```
+
+Архив и `.sha256` — root-owned, mode 600. При сбое запуска возвращается предыдущий стек.
+SSH/UFW и native MTProxyL восстанавливаются вручную; их основные конфиги сохранены
+в `system.tar.gz` внутри backup. Для MTProxyL также доступен `sudo mtproxyl backup`.
+
+## Полезные команды
+
+Аргументы ниже: `sudo /opt/vps-installer/app/install.sh АРГУМЕНТ`.
+
+| Аргумент | Действие |
 |---|---|
-| `--status` | Состояние контейнеров, портов и таймеров |
-| `--check` | Полная проверка инфраструктуры и передачи VLESS |
-| `--check-xray` | API, привязки портов и реальная передача VLESS |
-| `--check-xray-client EMAIL` | Проверить существующего клиента по email из панели |
-| `--show-client` | Показать сохранённую служебную VLESS-ссылку в терминале |
-| `--show-client-for EMAIL` | Показать актуальную ссылку выбранного клиента |
-| `--panel-users` | Управлять SSH-доступом к панели |
-| `--repair-client-links` | Исправить экспорт ссылок и QR INBOUND/REALITY |
-| `--backup` | Создать локальную резервную копию |
-| `--restore /absolute/backup.tar.gz` | Восстановить эту же конфигурацию из архива |
-| `--reset-3xui-password` | Явно сменить пароль существующего администратора |
-| `--reconfigure` | Изменить заголовок/текст управляемого сайта |
-| `--configure-xray` | Настроить или проверить сохранённый транспорт |
-| `--migrate-inbound-reality` | Перевести старый managed INBOUND с gRPC на REALITY |
-| `--uninstall` | Остановить стек, сохранив данные и защиту хоста |
+| `--status` / `--check` | Статус / проверка стека, SSH, HTTPS, firewall и передачи VLESS |
+| `--check-xray` / `--check-xray-client EMAIL` | Проверить VLESS / выбранного клиента |
+| `--show-client-for EMAIL` | Показать ссылку выбранного клиента |
+| `--repair-client-links` | Исправить localhost в штатных ссылках/QR |
+| `--reset-3xui-password` | Сменить пароль панели, сохранив клиентов; краткая остановка xui |
+| `--backup` / `--help` | Создать backup / показать все команды |
 
-Пример: `sudo /opt/vps-installer/app/install.sh --status`.
-Если служебный клиент удалён вручную, используйте `--check-xray-client EMAIL`.
-Для обновления инструментов получите свежие исходники приватного репозитория и
-запускайте нужную команду из нового каталога. Простой повтор установки может
-обновить latest-образы; для обычного доступа к панели он не требуется.
+Логи: `sudo docker logs --tail 100 vps-xui` или `vps-nginx`.
+Диагностика: `sudo docker exec vps-nginx nginx -t`, `sudo ufw status verbose`,
+`sudo fail2ban-client status sshd`; для telemt — `sudo systemctl status mtproxyl-telemt`.
 
-## Данные и резервные копии
+## Если не работает
 
-В `/opt/vps-installer` находятся `state.json`, `transport.json`, `compose.yml`,
-БД панели, сайт, сертификаты, root-only каталоги `secrets/` и `clients/`.
-Архивы сохраняются в `/var/backups/vps-installer`; настроен ежедневный backup.
-Они содержат ключи и учётные данные: храните внешние копии с шифрованием.
+- **HTTPS/сертификат:** DNS, TCP80/443, HTTP-01 без WAF, `nginx -t`, логи nginx.
+- **Cloudflare/gRPC:** Proxied, Full (strict), HTTP/2, gRPC, SNI домена OUTBOUND,
+  `serviceName=vlessgrpc`; внутренний TCP10000 не публикуется.
+- **VLESS/связь VPS:** `--check-xray` на обоих узлах, UUID, лимиты клиента,
+  домен и ожидаемый IP OUTBOUND. Не добавляйте direct для обхода сбоя.
+- **Панель/туннель:** SSH-порт, свой приватный ключ, имя пользователя, свободный
+  локальный порт. Не открывайте 2053 в firewall.
+- **Telegram:** TCP9443 у провайдера/UFW, служба telemt, локальный SOCKS1080,
+  `sudo mtproxyl secret link`. Его параметры не настраиваются в панели 3x-ui.
 
-Повтор установки сохраняет существующие UUID и пароль панели. При несовместимой
-версии API, конфликте identity или порта автоматизация останавливается. Теги
-образов latest не закрепляются; текущий проверенный API-контракт — 3.11.0.
-
-## Документация и проверки
-
-- [Архитектура](docs/ARCHITECTURE.md) и [безопасность](docs/SECURITY.md).
-- [SSH-пользователи панели](docs/PANEL-USERS.md), [миграция](docs/MIGRATION.md).
-- [Результаты проверок](docs/TEST-REPORT.md), [ручная проверка](docs/MANUAL-TEST.md).
-- [Официальные источники](docs/SOURCES.md).
-
-Исходники: `helpers/`, `lib/`, `templates/`, `config/`. Проверки: `tests/`.
-Для локальных unit/syntax-проверок установите ShellCheck и зависимости из
-`tests/requirements.txt`, затем выполните `bash tests/run.sh`.
-Контейнерные и browser-проверки запускаются отдельно по инструкциям в тестах.
+Перед production проверьте SSH из второй сессии, внешний scan портов, IP клиента,
+отказ OUTBOUND без выхода через РФ, продление TLS и restore. Локальные тесты
+не заменяют реальное развёртывание. Разработка: `tests/requirements.txt` и `bash tests/run.sh`.

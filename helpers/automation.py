@@ -4,8 +4,8 @@ import argparse,copy,hashlib,ipaddress,json,os,re,shutil,signal,subprocess,sys,t
 from pathlib import Path
 from state import validate
 from xui_api import Api,Docker,SetupError,authenticated_api,private_json,private_text,verify_login
-from transport_profile import profile,validate_profile,parse_peer,client_config,client_uri
-from managed_inbound import SERVICE,decoded,marker,planned_cache,ensure,validate_existing,peer_for_client,relay_template,share_address_patch,owned_inbound
+from transport_profile import profile,validate_profile,parse_peer,relay_peer,client_config,client_uri
+from managed_inbound import SERVICE,decoded,marker,planned_cache,ensure,validate_existing,peer_for_client,relay_template,share_address_patch,owned_inbound,check_relay
 from xray_probe import probe
 
 GRPC=(Path(__file__).resolve().parents[1]/'templates/grpc.inc').read_text()
@@ -141,7 +141,7 @@ class Engine:
             rows=[r for r in self.api.inbounds() if r['id']==sharing['id']]
             if len(rows)!=1:raise SetupError('Inbound disappeared during share-address recovery; journal retained')
             current=rows[0]
-            for key in ('shareAddrStrategy','shareAddr'):
+            for key in sharing['before']:
                 if current.get(key) not in (sharing['before'].get(key),sharing['after'][key]):raise SetupError('Concurrent share-address edit detected; journal retained')
             restored=dict(current,**sharing['before'])
             self.api.request('/panel/api/inbounds/update/'+str(current['id']),restored)
@@ -224,7 +224,7 @@ class Engine:
             if not created and migration is None:
                 adjusted=share_address_patch(row,self.state)
                 if adjusted:
-                    fields=('shareAddrStrategy','shareAddr')
+                    fields=('shareAddrStrategy','shareAddr','remark')
                     journal['share_address']={'id':row['id'],'before':{k:row.get(k,'node' if k=='shareAddrStrategy' else '') for k in fields},'after':{k:adjusted[k] for k in fields}}
                     self.save_journal(journal)
                     self.api.request('/panel/api/inbounds/update/'+str(row['id']),adjusted)
@@ -278,7 +278,9 @@ def main():
         if (root/'transport.json').exists():raise SetupError('Transport profile already exists; not overwritten')
         private_json(root/'transport.json',value);return
     if args.command=='import-peer':
-        uri,expected=sys.stdin.read().splitlines();private_json(root/'secrets/relay.json',parse_peer(uri,expected));return
+        uri,expected=sys.stdin.read().splitlines();peer=relay_peer(parse_peer(uri,expected))
+        cloudflare_dns(peer['address'],Path(__file__).resolve().parents[1]/'config/cloudflare-networks.json')
+        private_json(root/'secrets/relay.json',peer);return
     if args.command=='login-check':
         user,password=sys.stdin.read().splitlines();verify_login(args.base,user,password);return
     if args.command=='cf-check':
@@ -306,6 +308,9 @@ def main():
             if any(r['id']==cache.get('inbound_id') for r in rows):raise SetupError('Saved inbound ID exists, but its saved test-client UUID is missing; current clients were preserved')
             raise SetupError('Managed inbound is missing')
         validate_existing(row,engine.state,engine.profile,cache);engine.actual_bindings()
+        if engine.profile['topology']=='relay':
+            remote=json.loads((root/'secrets/relay.json').read_text());current=api.template()
+            check_relay(current,row['tag'],remote)
         print('Saved inbound ID/UUID and Docker publications: OK',flush=True)
         print('Checking internal VLESS connection through the selected route...',flush=True)
         engine.verify_internal(cache)
@@ -314,9 +319,8 @@ def main():
         engine.verify_public(cache)
         print('Xray API, inbound, Docker publication and real authenticated client transfer: PASSED');return
     result=engine.provision(public=True,migrate=args.command=='migrate-inbound-reality')
-    if engine.state['role']=='inbound':
-        from public_links import repair
-        repair(api,root,engine.state,engine.profile,docker)
+    from public_links import repair
+    repair(api,root,engine.state,engine.profile,docker)
     print('Automatic Xray configuration verified; inbound id '+str(result['inbound_id'])+'. Client secrets saved under '+str(root/'clients'))
 
 if __name__=='__main__':

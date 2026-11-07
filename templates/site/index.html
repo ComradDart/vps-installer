@@ -1,30 +1,18 @@
 <!doctype html>
-<html lang="ru" data-fx="on">
+<html lang="ru">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#090512"><title>@@TITLE@@ // DIGITAL ACID TRANSMISSION</title>
-<link rel="stylesheet" href="/style.css?v=acid2"><script src="/app.js?v=acid2" defer></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#14213d">
+  <title>@@TITLE@@</title>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<canvas id="acid-canvas" aria-hidden="true"></canvas><div class="scanlines" aria-hidden="true"></div>
-<div id="debris" aria-hidden="true"></div>
-<div class="page-shell">
-<header class="topbar"><a class="wordmark" href="#home"><i aria-hidden="true"></i> BENIS SYSTEMS<span>DEPARTMENT OF QUESTIONABLE IDEAS</span></a>
-<div class="top-controls"><span class="signal"><i aria-hidden="true"></i> СИГНАЛ ПЛЫВЁТ</span><time id="clock">00:00:00</time><button id="fxToggle" type="button" class="quiet-button" aria-pressed="true">FX: ВКЛ</button></div></header>
-<main id="home">
-<section class="hero" aria-labelledby="hero-title"><div class="hero-copy"><p class="eyebrow"><span>TRANSMISSION № 00404</span><span>НЕ ПЫТАЙТЕСЬ НАСТРОИТЬ ПРИЁМНИК</span></p>
-<h1 id="hero-title" class="glitch" data-text="@@TITLE@@">@@TITLE@@</h1>
-<p class="hero-text">@@TEXT@@</p><p class="hero-aside">Ноль смысла. Максимум сигнала. Пожалуйста, не кормите пиксели после полуночи.</p>
-<div class="hero-actions"><button id="warpBtn" class="button button-acid" type="button"><span>ЗАПУСТИТЬ WARP</span><b aria-hidden="true">↗</b></button><button id="benisBtn" class="button button-pink" type="button">СДЕЛАТЬ ЧТО-НИБУДЬ</button><a class="text-link" href="#laboratory">ВНИЗ ПО КРОЛИЧЬЕЙ НОРЕ ↓</a></div></div>
-<div class="hero-art" aria-hidden="true"><span class="art-coordinate c-one">X: 69.420 / Y: ???</span><div class="orbital-grid"></div><div class="orbital-ring ring-one"></div><div class="orbital-ring ring-two"></div><div class="orbital-ring ring-three"></div><div class="orb-core"><span>NO<br>SIGNAL</span><small>AND THAT'S OKAY</small></div><span class="art-coordinate c-two">НЕСТАБИЛЬНОСТЬ — ЭТО ФИЧА</span><span class="orbit-cross cross-one">+</span><span class="orbit-cross cross-two">+</span><span class="art-note">EST. 2026<br>100% DIGITAL NONSENSE</span></div></section>
-<div class="ticker" aria-label="Бегущая строка: работа не имеет смысла"><div><span>HAHA BENIS ONLINE</span><b>✳</b><span>NO PURPOSE DETECTED</span><b>✳</b><span>НЕ ТРОГАТЬ. ОНО САМО.</span><b>✳</b><span>ACID RENDERER ACTIVATED</span><b>✳</b><span>ПИКСЕЛИ ВЕДУТ СЕБЯ СТРАННО</span><b>✳</b><span aria-hidden="true">HAHA BENIS ONLINE</span><b aria-hidden="true">✳</b><span aria-hidden="true">NO PURPOSE DETECTED</span><b aria-hidden="true">✳</b><span aria-hidden="true">НЕ ТРОГАТЬ. ОНО САМО.</span><b aria-hidden="true">✳</b><span aria-hidden="true">ACID RENDERER ACTIVATED</span><b aria-hidden="true">✳</b><span aria-hidden="true">ПИКСЕЛИ ВЕДУТ СЕБЯ СТРАННО</span><b aria-hidden="true">✳</b></div></div>
-<section class="telemetry" aria-label="Выдуманная телеметрия"><div><small>ЦЕЛОСТНОСТЬ СИГНАЛА</small><strong id="signalValue">87.4<span>%</span></strong><i class="tiny-wave" aria-hidden="true"></i></div><div><small>ЧАСТОТА БЕНИСА</small><strong id="frequency">88.74<span>Hz</span></strong><span class="telemetry-note">НЕ СЕРТИФИЦИРОВАНО НИКОГДА</span></div><div><small>УРОВЕНЬ БЕСПОЛЕЗНОСТИ</small><strong class="acid">OVER<span>9000</span></strong><span class="telemetry-note">ПРЕВЫШАЕТ РЕКОМЕНДАЦИИ</span></div><div><small>ТЫКОВ В ЭТОМ БРАУЗЕРЕ</small><strong id="clickCount">000000</strong><span class="telemetry-note">ЛОКАЛЬНАЯ ПАМЯТЬ ШАЛОСТЕЙ</span></div></section>
-<section id="laboratory" class="laboratory" aria-labelledby="lab-title"><div class="section-head"><p class="eyebrow">01 / ЛАБОРАТОРИЯ БЕСПОЛЕЗНОГО</p><h2 id="lab-title">Всё под контролем.<br><em>Почти.</em></h2><p>Показания выдуманы. Кнопки настоящие.<br>За последствия отвечает совет пикселей.</p></div>
-<div class="lab-grid"><article class="panel randomizer"><div class="panel-head"><span>✳ BENIS RANDOMIZER</span><span class="cyan">[ EXPERIMENTAL ]</span></div><div class="panel-content"><p class="mini-label">ТЕКУЩЕЕ СОСТОЯНИЕ ВСЕЛЕННОЙ</p><div class="chaos-word" id="chaos">COSMIC<br>BENIS</div><p class="muted" id="council">Совет пикселей пока не определился.</p><button id="shuffleBtn" type="button" class="button button-outline">ПЕРЕСОБРАТЬ РЕАЛЬНОСТЬ <span aria-hidden="true">↻</span></button></div><div class="panel-foot"><span>СОГЛАСОВАНО С ПУСТОТОЙ</span><span id="approval">69%</span></div></article>
-<article class="panel tuner"><div class="panel-head"><span>⌁ РУЧНАЯ НАСТРОЙКА</span><span>[ НЕ КРУТИТЬ ]</span></div><div class="panel-content"><div class="dial" aria-hidden="true"><div class="dial-ring"></div><div class="dial-cross">✳</div><span>ACID<br>PRESSURE</span></div><label for="tuner">УРОВЕНЬ ЦИФРОВОЙ НЕАДЕКВАТНОСТИ <output id="tunerValue" for="tuner">42%</output></label><input id="tuner" type="range" min="0" max="100" value="42"><div class="range-labels"><span>СТРАННОВАТО</span><span>ЧТО ВООБЩЕ ПРОИСХОДИТ</span></div></div></article>
-<article class="panel terminal-panel"><div class="panel-head"><span>&gt; FAKE TERMINAL</span><span class="terminal-dots" aria-hidden="true">● ● ●</span></div><div class="terminal" aria-label="Декоративный выдуманный терминал"><div id="terminalLines"><p><span>00:00</span> booting questionable ideas...</p><p><span>00:01</span> purpose.dll <b>NOT FOUND</b></p><p><span>00:02</span> continuing anyway. obviously.</p></div><span class="terminal-cursor" aria-hidden="true">█</span></div><div class="panel-foot"><span>РИТУАЛЬНОЕ БОРМОТАНИЕ ПИКСЕЛЕЙ</span><span class="acid">READ ONLY / FEEL EVERYTHING</span></div></article></div></section>
-<section class="nonsense"><div class="sticker" aria-hidden="true">100%<br><strong>БЕСПОЛЕЗНО</strong><small>И ЭТО ПРЕКРАСНО</small></div><div><p class="eyebrow">02 / КОНТРОЛИРУЕМАЯ КАТАСТРОФА</p><h2>Одна маленькая<br><span>плохая идея.</span></h2><p>В инструкции было написано «не нажимать».<br>Но инструкцию, разумеется, никто не читал.</p></div><button id="nukeBtn" type="button" class="nuke-button"><span aria-hidden="true">✳</span><b>НЕ НАЖИМАТЬ</b><small>СЕРЬЁЗНО. НУ ПОЧТИ.</small></button></section>
-<div class="status-strip"><span><i aria-hidden="true"></i> ПЕРЕДАЧА ПРОДОЛЖАЕТСЯ</span><span>ОБЫЧНЫЙ САЙТ. НЕОБЫЧНЫЕ ПИКСЕЛИ.</span><a href="#home">НАВЕРХ ↑</a></div></main>
-<footer><span>© <span id="year">2026</span> @@TITLE@@</span><span>NO PRODUCTS. NO ROADMAP. JUST BENIS.</span><span id="footerNote">REALITY IS A SUGGESTION.</span></footer>
-</div><div id="toast" role="status" aria-live="polite"></div>
-</body></html>
+  <main>
+    <p class="label">Независимая студия</p>
+    <h1>@@TITLE@@</h1>
+    <p>@@TEXT@@</p>
+    <footer>Идеи. Дизайн. Технологии.</footer>
+  </main>
+</body>
+</html>

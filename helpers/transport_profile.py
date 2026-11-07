@@ -33,6 +33,12 @@ def parse_peer(uri,expected_ip):
     else:raise SetupError('Supported peer URI types: VLESS gRPC/TLS or VLESS REALITY/Vision')
     return peer
 
+def relay_peer(peer):
+    if (peer.get('mode')!='grpc' or peer.get('port')!=443 or
+        peer.get('service')!='vlessgrpc' or peer.get('server_name')!=peer.get('address')):
+        raise SetupError('The INBOUND relay requires the OUTBOUND Cloudflare domain, TLS/gRPC, TCP443, SNI matching Address and serviceName vlessgrpc; saved settings were preserved')
+    return peer
+
 def outbound(peer,tag='proxy'):
     user={'id':peer['uuid'],'encryption':'none'}
     if peer['mode']=='grpc':stream={'network':'grpc','security':'tls','tlsSettings':{'serverName':peer['server_name'],'allowInsecure':False,'alpn':['h2']},'grpcSettings':{'serviceName':peer['service'],'multiMode':False}}

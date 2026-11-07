@@ -87,39 +87,76 @@ def test_failed_transfer_rolls_back(transport_stack):
     engine(c,'direct-grpc').provision(public=False)
     assert json.loads((c['root']/'secrets/managed-xray.json').read_text())['uuid']==identity
 
-def test_relay_verified_before_routing_and_no_direct_fallback(transport_stack):
+def test_relay_verified_before_routing_and_no_direct_fallback(transport_stack,monkeypatch):
     import uuid
     from transport_profile import parse_peer,client_uri
-    from xray_probe import probe
+    from state import write
     c=transport_stack;root=c['root'];adapter=c['adapter'];names=[]
-    keys=c['api'].request('/panel/api/server/getNewX25519Cert')
-    peer=dict(mode='reality',address='exit.example.test',port=2443,server_name='example.test',uuid=str(uuid.uuid4()),public_key=keys['publicKey'],short_id='1234567890abcdef',fingerprint='chrome')
+    # Same transports as production; the local CA and Docker DNS replace the
+    # public origin certificate/DNS. This fixture does not exercise Cloudflare.
+    state=json.loads((root/'state.json').read_text());state['role']='inbound';write(root/'state.json',state)
+    peer=dict(mode='grpc',address='exit.example.test',port=443,server_name='exit.example.test',uuid=str(uuid.uuid4()),service='vlessgrpc')
     remote=parse_peer(client_uri(peer,'Independent test OUTBOUND'),'192.0.2.20')
-    e=engine(c,'direct-grpc')
+    e=engine(c,'direct-reality')
     e.profile['topology']='relay';private_json(root/'transport.json',e.profile);private_json(root/'secrets/relay.json',remote)
-    # A nonexistent OUTBOUND must cause no local inbound or routing mutation.
-    original=c['api'].template()
-    with pytest.raises(SetupError):e.provision(public=False)
-    assert c['api'].inbounds()==[] and c['api'].template()==original
+    import automation
+    production_template=automation.relay_template
+    def local_ca(template,tag,peer):
+        result=production_template(template,tag,peer)
+        rule=next(r for r in result['routing']['rules'] if r.get('inboundTag')==[tag])
+        remote=next(o for o in result['outbounds'] if o.get('tag')==rule['outboundTag'])
+        # The real origin uses a public certificate. This fixture explicitly trusts
+        # its private CA in the actual Xray outbound; TLS verification remains on.
+        remote['streamSettings']['tlsSettings']['certificates']=[dict(certificateFile='/test-ca.pem',usage='verify')]
+        return result
+    monkeypatch.setattr(automation,'relay_template',local_ca)
+    unavailable=False
+    original_run=adapter.run
+    def short_failure_probe(*args,**kwargs):
+        args=list(args)
+        if args and args[0]=='exec' and 'curl' in args and '--proxy' in args:
+            args[args.index('--max-time')+1]='2' if unavailable else '8'
+        return original_run(*args,**kwargs)
+    adapter.run=short_failure_probe
     try:
         # Reuse the HTTP fixture on a second port to fit the sandbox's VFS disk budget.
         targetconf=c['base']/'target.conf'
         with targetconf.open('a') as f:f.write('\nserver { listen 8081; location / { default_type application/json; return 200 \'{"ip":"192.0.2.20"}\'; } }')
         docker('exec',c['ident']+'-target','nginx','-s','reload')
-        server={'log':{'loglevel':'warning'},'inbounds':[{'listen':'0.0.0.0','port':2443,'protocol':'vless','settings':{'clients':[{'id':peer['uuid'],'flow':'xtls-rprx-vision'}],'decryption':'none'},'streamSettings':{'network':'tcp','security':'reality','realitySettings':{'show':False,'target':'nginx:8443','serverNames':['example.test'],'privateKey':keys['privateKey'],'shortIds':[peer['short_id']]}}}], 'outbounds':[{'protocol':'freedom','settings':{'redirect':'target:8081'}}]}
+        target_ip=json.loads(docker('inspect',c['ident']+'-target'))[0]['NetworkSettings']['Networks'][c['net']]['IPAddress']
+        assert '192.0.2.20' in docker('exec',c['xui'],'curl','--noproxy','*','-fsS','--max-time','3','http://target:8081/')
+        server={'log':{'loglevel':'info'},'inbounds':[{'listen':'0.0.0.0','port':10000,'protocol':'vless','settings':{'clients':[{'id':peer['uuid']}],'decryption':'none'},'streamSettings':{'network':'grpc','security':'none','grpcSettings':{'serviceName':'vlessgrpc','multiMode':False}}}], 'outbounds':[{'protocol':'freedom','settings':{'redirect':target_ip+':8081','finalRules':[{'ip':[target_ip+'/32'],'action':'allow'}]}}]}
         path=c['base']/'exit.json';private_json(path,server)
         name=c['ident']+'-exit';names.append(name)
-        docker('run','-d','--name',name,'--network',c['net'],'--network-alias','exit.example.test','--user',str(os.getuid())+':'+str(os.getgid()),'--log-driver','none','--cap-drop','ALL','-v',str(path)+':/exit.json:ro','-v',str(c['base']/'bin')+':/xray-bin:ro','--entrypoint','/xray-bin/'+adapter.binary().rsplit('/',1)[1],c['versions']['nginx_image'],'run','-config','/exit.json')
+        docker('run','-d','--name',name,'--network',c['net'],'--user',str(os.getuid())+':'+str(os.getgid()),'--log-driver','local','--cap-drop','ALL','-v',str(path)+':/exit.json:ro','-v',str(c['base']/'bin')+':/xray-bin:ro','--entrypoint','/xray-bin/'+adapter.binary().rsplit('/',1)[1],c['versions']['nginx_image'],'run','-config','/exit.json')
+        front=c['ident']+'-exit-tls';names.append(front)
+        nginx=c['base']/'exit-nginx.conf'
+        nginx.write_text('error_log /dev/stderr warn; pid /tmp/nginx.pid; events {}\nhttp { access_log /dev/stdout; server { listen 443 ssl; http2 on; server_name exit.example.test; ssl_certificate /tls/fullchain.pem; ssl_certificate_key /tls/privkey.pem; location /vlessgrpc/ { grpc_pass grpc://'+name+':10000; } } }')
+        nginx.chmod(0o644)
+        docker('run','-d','--name',front,'--network',c['net'],'--network-alias','exit.example.test','--user','101:101','--log-driver','local','--cap-drop','ALL','--sysctl','net.ipv4.ip_unprivileged_port_start=0','--tmpfs','/tmp:uid=101,gid=101,mode=0700','--tmpfs','/var/cache/nginx:uid=101,gid=101,mode=0700','-v',str(nginx)+':/etc/nginx/nginx.conf:ro','-v',str(root/'tls')+':/tls:ro','--entrypoint','nginx',c['versions']['nginx_image'],'-g','daemon off;')
         time.sleep(2)
+        for remote_name in names:
+            assert json.loads(docker('inspect',remote_name))[0]['State']['Running'], 'Isolated remote service stopped: '+remote_name
+        docker('exec',front,'nginx','-t')
+        assert docker('exec',c['xui'],'curl','--noproxy','*','--http2','--cacert','/test-ca.pem','--max-time','3','-sS','-o','/dev/null','-w','%{http_version}','https://exit.example.test/')=='2'
         e.provision(public=False)
         row=c['api'].inbounds()[0]
-        assert c['api'].template()['routing']['rules'][0]==dict(type='field',inboundTag=[row['tag']],outboundTag='vps-installer-exit')
+        routes=c['api'].template()['routing']['rules']
+        assert routes[0]==dict(type='field',inboundTag=['api'],outboundTag='api')
+        assert routes[1]==dict(type='field',inboundTag=[row['tag']],outboundTag='to-outbound')
         # The destination's direct response is .10; only the independent OUTBOUND returns .20.
-        cache=json.loads((root/'secrets/managed-xray.json').read_text());e.verify_internal(cache)
-        docker('stop',name)
+        cache=json.loads((root/'secrets/managed-xray.json').read_text())
+        docker('stop','-t','0',front)
+        unavailable=True
         with pytest.raises(SetupError):e.verify_internal(cache)
         assert len(c['api'].inbounds())==1
         c['checkpoints'].append(dict(check='Provided OUTBOUND preverified; real relay exits through peer; peer shutdown fails closed',status='PASSED'))
+    except Exception:
+        error_log=root/'xray-logs/stdout'
+        if error_log.exists():print('Isolated Xray diagnostics:',error_log.read_text()[-6000:])
+        print('Isolated INBOUND diagnostics:',docker('logs',c['xui'])[-8000:])
+        for name in names:print('Isolated remote diagnostics:',docker('logs',name)[-2000:])
+        raise
     finally:
         for name in reversed(names):docker('rm','-f',name)
 

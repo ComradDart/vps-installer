@@ -79,7 +79,7 @@ def test_peer_uri_and_route_all_managed_traffic():
     assert parsed['uuid']==peer['uuid'] and parsed['service']=='vlessgrpc'
     base={'outbounds':[{'tag':'direct','protocol':'freedom'}],'routing':{'rules':[{'type':'field','ip':['geoip:private'],'outboundTag':'blocked'}]}}
     after=relay_template(base,'in-10000-tcp',parsed)
-    assert after['routing']['rules'][0]==dict(type='field',inboundTag=['in-10000-tcp'],outboundTag='vps-installer-exit')
+    assert after['routing']['rules'][0]==dict(type='field',inboundTag=['in-10000-tcp'],outboundTag='to-outbound')
     assert relay_template(after,'in-10000-tcp',parsed)==after
     assert len(client_config(parsed)['outbounds'])==1
     assert client_config(parsed)['outbounds'][0]['protocol']=='vless'
@@ -126,3 +126,35 @@ def test_relay_conflict_not_overwritten():
     before=copy.deepcopy(current)
     with pytest.raises(SetupError,match='Conflicting route'):relay_template(current,'mine',peer)
     assert current==before
+
+
+def test_relay_rule_is_unconditional_and_preserves_deployed_defaults():
+    peer=dict(mode='grpc',address='exit.example.test',server_name='exit.example.test',port=443,uuid=str(uuid.uuid4()),service='vlessgrpc')
+    old_out=client_config(peer)['outbounds'][0];old_out['tag']='vps-installer-exit'
+    blocked=dict(tag='blocked',protocol='blackhole',settings={})
+    template=dict(outbounds=[dict(tag='direct',protocol='freedom'),old_out,blocked],routing=dict(rules=[]))
+    planned=relay_template(template,'saved-tag',peer)
+    assert planned['outbounds']==template['outbounds']
+    assert len(planned['outbounds'])==3
+    assert planned['routing']['rules'][0]['outboundTag']=='vps-installer-exit'
+    assert planned['routing']['rules'][0]['inboundTag']==['saved-tag']
+    assert relay_template(planned,'saved-tag',peer)==planned
+
+
+def test_new_relay_rejects_a_direct_ip_or_wrong_transport():
+    from transport_profile import relay_peer
+    peer=dict(mode='grpc',address='exit.example.test',server_name='exit.example.test',port=443,uuid=str(uuid.uuid4()),service='vlessgrpc')
+    assert relay_peer(peer)==peer
+    for patch in (dict(mode='reality'),dict(port=10000),dict(service='other'),dict(server_name='other.example.test')):
+        with pytest.raises(SetupError):relay_peer(dict(peer,**patch))
+    with pytest.raises(SetupError):parse_peer('vless://'+peer['uuid']+'@192.0.2.10:443?security=tls&type=grpc&serviceName=vlessgrpc','192.0.2.10')
+
+
+def test_relay_keeps_native_panel_api_rule_first():
+    peer=dict(mode='grpc',address='exit.example.test',server_name='exit.example.test',port=443,uuid=str(uuid.uuid4()),service='vlessgrpc')
+    api_rule=dict(type='field',inboundTag=['api'],outboundTag='api')
+    template=dict(outbounds=[dict(tag='direct',protocol='freedom')],routing=dict(rules=[api_rule]))
+    planned=relay_template(template,'client-in',peer)
+    assert planned['routing']['rules'][0]==api_rule
+    assert planned['routing']['rules'][1]['outboundTag']=='to-outbound'
+    assert relay_template(planned,'client-in',peer)==planned

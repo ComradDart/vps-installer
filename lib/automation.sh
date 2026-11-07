@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
 transport_select() {
-    local mode topology=standalone choice remote_uri remote_ip status
+    local mode topology=standalone remote_uri remote_ip status
     status=$(python3 "$APP/helpers/automation.py" profile-info "$ROOT")
     [[ $status == missing ]] || return 0
     if [[ $ROLE == inbound ]]; then
         mode=direct-reality
         log 'INBOUND: VLESS/REALITY/Vision on TCP443; nginx self-steal target on internal 8443. Use DNS only for this hostname.'
-        printf 'INBOUND topology:\n1. Relay to an existing OUTBOUND\n2. Standalone server\n'
-        ask choice Topology 1
-        case "$choice" in 1) topology=relay;; 2) topology=standalone;; *) die 'Choose 1 or 2';; esac
+        topology=relay
     else
-        printf 'OUTBOUND transport:\n1. cloudflare-grpc\n2. direct-reality\n'
-        ask choice Transport 1
-        case "$choice" in 1) mode=cloudflare-grpc;; 2) mode=direct-reality;; *) die 'Choose 1 or 2';; esac
+        mode=cloudflare-grpc
     fi
     if [[ $topology == relay ]]; then
         read -r -s -p 'Paste the OUTBOUND VLESS client URI (hidden): ' remote_uri </dev/tty || die 'Terminal input closed'
@@ -46,7 +42,6 @@ configure_xray() {
     state_set phase ssh-ready
     cloudflare_checkpoint
     python3 "$APP/helpers/automation.py" configure "$ROOT"
-    state_set phase ready
     log "Verified client profile: $ROOT/clients/vless.txt (root-only). Use --show-client in an interactive terminal."
 }
 migrate_inbound_reality() {

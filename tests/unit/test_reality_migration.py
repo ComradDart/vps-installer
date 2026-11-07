@@ -102,7 +102,7 @@ def test_already_reality_does_not_generate_new_keys(migration):
     assert api.keys==1
 
 @pytest.mark.parametrize('role,choice,mode,topology',[
-    ('inbound','2','direct-reality','standalone'),
+    ('inbound','2','direct-reality','relay'),
     ('outbound','1','cloudflare-grpc','standalone'),
 ])
 def test_role_transport_selection(tmp_path,role,choice,mode,topology):
@@ -112,10 +112,15 @@ def test_role_transport_selection(tmp_path,role,choice,mode,topology):
 ROOT=$1; APP=$2; ROLE=$3; CHOICE=$4
 source "$APP/lib/automation.sh"
 log(){ :; }
+die(){ exit 1; }
 ask(){ printf -v "$1" '%s' "$CHOICE"; }
 transport_select
 '''
     result=subprocess.run(['bash','-c',script,'test',str(tmp_path),str(APP),role,choice],capture_output=True,text=True)
+    if role=='inbound':
+        # No terminal/peer was supplied: never silently create a standalone node.
+        assert result.returncode!=0 and not (tmp_path/'transport.json').exists()
+        return
     assert result.returncode==0,result.stderr
     profile=json.loads((tmp_path/'transport.json').read_text())
     assert profile['mode']==mode and profile['topology']==topology

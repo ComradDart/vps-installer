@@ -1,7 +1,7 @@
 """Native 3x-ui 3.11 Hosts API: external endpoint metadata, never the listener."""
 import copy,json,re,urllib.parse
 from pathlib import Path
-from managed_inbound import decoded
+from managed_inbound import decoded,marker,owned_inbound
 from client_tools import public_key
 from xui_api import SetupError,private_json
 
@@ -10,13 +10,18 @@ def host_payload(row,state):
     domain=state.get('PUBLIC_DOMAIN',state['domain'])
     stream=decoded(row,'streamSettings')
     result=dict(inboundIds=[row['id']],hosts=[domain+':443'],port=443,
-                remark='vps-installer:public:'+str(row['id']),security='same')
+                remark=marker(state,{}),security='same')
     if stream.get('security')=='reality' and stream.get('network') in ('tcp','raw'):
         if row['port']!=443:raise SetupError('Managed REALITY port differs; preserved')
         reality=stream['realitySettings']
         if not reality.get('serverNames') or not reality.get('shortIds'):
             raise SetupError('Existing REALITY serverNames/shortIds missing; nothing regenerated')
         public_key(reality.get('privateKey','')) # Verify derivation before any write.
+    elif stream.get('network')=='grpc' and stream.get('security')=='none':
+        if row['port']!=10000 or stream.get('grpcSettings',{}).get('serviceName')!='vlessgrpc':
+            raise SetupError('Unexpected managed gRPC listener; public links not guessed')
+        # The origin listener has no TLS; the exported endpoint terminates TLS at nginx.
+        result.update(security='tls',sni=domain,alpn=['h2'])
     else:raise SetupError('Unsupported managed transport; public links not guessed')
     return result
 
@@ -34,15 +39,21 @@ def export_patch(row,state):
 
 def validate_uri(uri,row,client,state):
     link=urllib.parse.urlsplit(uri);q=urllib.parse.parse_qs(link.query,keep_blank_values=True)
+    if any(len(values)!=1 for values in q.values()):raise SetupError('Duplicate parameters in panel-generated VLESS link')
     domain=state.get('PUBLIC_DOMAIN',state['domain'])
     if link.scheme!='vless' or link.hostname!=domain or link.port!=443 or link.username!=client['id']:
         raise SetupError('Panel-generated VLESS address/port/identity is incorrect (link omitted)')
     def value(key):return q.get(key,[''])[0]
     stream=decoded(row,'streamSettings')
-    if value('encryption') not in ('','none'):raise SetupError('Unexpected VLESS encryption in panel export')
+    if value('encryption')!='none':raise SetupError('Missing or unexpected VLESS encryption in panel export')
+    if stream.get('network')=='grpc':
+        expected={'security':'tls','type':'grpc','sni':domain,'serviceName':'vlessgrpc','alpn':'h2','flow':''}
+        if any(value(k)!=v for k,v in expected.items()):
+            raise SetupError('Panel-generated gRPC TLS/address/transport differs from nginx')
+        return
     reality=stream['realitySettings'];names=reality['serverNames'];shorts=reality['shortIds']
     expected={'security':'reality','flow':client.get('flow',''),'pbk':public_key(reality['privateKey'])}
-    if value('type') not in ('tcp','raw') or value('sni') not in names or value('sid') not in shorts:
+    if value('type') not in ('tcp','raw') or not value('sni') or value('sni') not in names or not re.fullmatch(r'(?:[a-fA-F0-9]{2}){1,8}',value('sid')) or value('sid') not in shorts:
         raise SetupError('Panel-generated REALITY transport/SNI/short ID differs from server')
     if any(value(k)!=v for k,v in expected.items()):
         raise SetupError('Panel-generated VLESS TLS/transport/key/flow is incorrect (link omitted)')
@@ -70,7 +81,7 @@ def subscription_plan(api,root,state):
         raise SetupError('Existing subscription TLS configuration requires review; preserved')
     after=copy.deepcopy(settings);locations=[]
     port=int(settings['subPort'])
-    if port<1 or port>65535:raise SetupError('Invalid existing subscription port')
+    if port<1 or port>65535 or port in (80,443,2053,8443,10000):raise SetupError('Unsafe existing subscription port; panel/proxy ports must never be publicly reverse-proxied')
     for enable,path_key,uri_key in [('subEnable','subPath','subURI'),('subJsonEnable','subJsonPath','subJsonURI'),('subClashEnable','subClashPath','subClashURI')]:
         if not settings.get(enable):continue
         path=settings[path_key]
@@ -91,8 +102,8 @@ def subscription_plan(api,root,state):
 
 
 def repair(api,root,state,profile,docker=None):
-    if state['role']!='inbound' or profile['mode']!='direct-reality':
-        raise SetupError('Public-link repair is only for INBOUND REALITY; OUTBOUND preserved')
+    if profile['mode'] not in ('direct-reality','direct-grpc','cloudflare-grpc'):
+        raise SetupError('Unsupported managed public-link transport')
     root=Path(root);journal=root/'public-links-transaction.json'
     # Recover only native export metadata; no direct DB changes or Xray restart.
     def restore(data):
@@ -116,16 +127,15 @@ def repair(api,root,state,profile,docker=None):
     cache_path=root/'secrets/managed-xray.json'
     if not cache_path.exists():raise SetupError('Managed inbound identity missing; no arbitrary inbound modified')
     cache=json.loads(cache_path.read_text());rows=api.inbounds()
-    owned=[r for r in rows if r['id']==cache.get('inbound_id')]
-    if not owned:owned=[r for r in rows if r.get('remark')=='vps-installer:'+state['role']+':'+profile['mode']]
-    if len(owned)!=1 or owned[0]['protocol']!='vless':raise SetupError('Expected one managed VLESS inbound; nothing guessed')
-    row=owned[0];desired=host_payload(row,state);tag=desired['remark']
+    row=owned_inbound(rows,state,profile,cache)
+    if row is None or row['protocol']!='vless':raise SetupError('Expected one managed VLESS inbound; nothing guessed')
+    desired=host_payload(row,state);tag=desired['remark']
     hosts=api.request('/panel/api/hosts/list')
     if not isinstance(hosts,list):raise SetupError('Unexpected native Hosts API response')
     group='vpspublic'+str(row['id'])
     own=[h for h in hosts if h.get('groupId')==group]
     if len(own)>1:raise SetupError('Ambiguous managed public Host group')
-    if own and (own[0].get('inboundIds')!=[row['id']] or own[0].get('remark')!=tag):
+    if own and (own[0].get('inboundIds')!=[row['id']] or own[0].get('remark') not in (tag,'vps-installer:public:'+str(row['id']))):
         raise SetupError('Managed Host group was changed by hand; preserved')
     if any(row['id'] in h.get('inboundIds',[]) and h.get('groupId')!=group and not h.get('isDisabled') for h in hosts):
         raise SetupError('Custom Host rules already exist on this inbound; preserved, no extra endpoint added')

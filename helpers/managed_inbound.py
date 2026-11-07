@@ -11,7 +11,10 @@ def decoded(row,key):
     if not isinstance(value,dict):raise SetupError('Unexpected '+key+' schema')
     return value
 
-def marker(state,profile):return 'vps-installer:'+state['role']+':'+profile['mode']
+def marker(state,profile):return 'IN · Client VLESS' if state['role']=='inbound' else 'OUT · Cloudflare gRPC'
+
+def managed_name(row,state,profile):
+    return row.get('remark') in (marker(state,profile),'vps-installer:'+state['role']+':'+profile['mode'])
 
 def planned_cache(root,api,state,profile):
     path=root/'secrets/managed-xray.json'
@@ -20,7 +23,7 @@ def planned_cache(root,api,state,profile):
         if cache.get('mode')!=profile['mode']:raise SetupError('Changing an existing managed transport requires a separate migration; active UUIDs have not been changed')
         uuid.UUID(cache['uuid']);return cache
     # Recover identity from the API before generating anything.
-    matches=[r for r in api.inbounds() if r.get('remark')==marker(state,profile)]
+    matches=[r for r in api.inbounds() if managed_name(r,state,profile)]
     if len(matches)>1:raise SetupError('Multiple managed inbounds found; refusing to guess or delete one')
     if matches:
         row=matches[0];clients=decoded(row,'settings').get('clients',[])
@@ -46,7 +49,7 @@ def payload(state,profile,cache):
     if reality:
         stream={'network':'tcp','security':'reality','realitySettings':{'show':False,'target':'nginx:8443','xver':0,'serverNames':[state['domain']],'privateKey':cache['private_key'],'shortIds':[cache['short_id']],'settings':{'publicKey':cache['public_key'],'fingerprint':'chrome','serverName':state['domain'],'spiderX':'/'}}}
     else:stream={'network':'grpc','security':'none','grpcSettings':{'serviceName':SERVICE,'multiMode':False}}
-    return {'up':0,'down':0,'total':0,'remark':marker(state,profile),'enable':True,'expiryTime':0,'listen':'0.0.0.0','port':443 if reality else 10000,'protocol':'vless',
+    return {'up':0,'down':0,'total':0,'remark':marker(state,profile),'tag':'client-in' if state['role']=='inbound' else 'cf-grpc-in','enable':True,'expiryTime':0,'listen':'0.0.0.0','port':443 if reality else 10000,'protocol':'vless',
             'shareAddrStrategy':'custom','shareAddr':state['domain'],
             'settings':json.dumps({'clients':[client],'decryption':'none'}),'streamSettings':json.dumps(stream),'sniffing':json.dumps({'enabled':False,'destOverride':['http','tls']})}
 
@@ -75,7 +78,7 @@ def owned_inbound(rows,state,profile,cache):
     else:
         if len(identified)==1:return identified[0]
         if len(identified)>1:raise SetupError('Saved UUID occurs in multiple inbounds; saved inbound ID is required')
-    if any(r.get('remark')==marker(state,profile) for r in rows):raise SetupError('Managed name exists but its saved client UUID is missing; clients were preserved')
+    if any(managed_name(r,state,profile) for r in rows):raise SetupError('Managed name exists but its saved client UUID is missing; clients were preserved')
     return None
 
 def ensure(api,state,profile,cache):
@@ -96,22 +99,36 @@ def peer_for_client(state,profile,cache,address=None,port=443):
 
 def relay_template(template,inbound_tag,peer):
     from transport_profile import outbound
-    result=copy.deepcopy(template);tag='vps-installer-exit'
+    result=copy.deepcopy(template)
+    # Preserve the tag of an already deployed relay; only new routes use the new name.
+    tag='vps-installer-exit' if any(o.get('tag')=='vps-installer-exit' for o in result.get('outbounds',[])) else 'to-outbound'
     matches=[o for o in result.get('outbounds',[]) if o.get('tag')==tag]
     candidate=outbound(peer,tag)
     if matches and (len(matches)!=1 or matches[0]!=candidate):raise SetupError('Existing managed OUTBOUND differs; no routing overwritten')
     if not matches:result.setdefault('outbounds',[]).append(candidate)
+    # Preserve the deployed outbound order. The unconditional rule selects the
+    # peer; a failed selected outbound never falls back to default freedom.
     rules=result.setdefault('routing',{}).setdefault('rules',[])
     expected={'type':'field','inboundTag':[inbound_tag],'outboundTag':tag}
     conflicts=[r for r in rules if inbound_tag in r.get('inboundTag',[]) and r!=expected]
     if conflicts:raise SetupError('Conflicting route for the managed inbound; direct fallback not applied')
-    result['routing']['rules']=[expected]+[r for r in rules if r!=expected]
+    # 3x-ui always hoists its stats/API rule when saving a template. Keep it
+    # first here too, otherwise every re-run churns routing and rollback hashes.
+    api_rules=[r for r in rules if r.get('outboundTag')=='api' and r.get('inboundTag')==['api']]
+    result['routing']['rules']=api_rules+[expected]+[r for r in rules if r!=expected and r not in api_rules]
     return result
 
 
 def share_address_patch(row,state):
     """Make panel-generated device links independent of the SSH-tunnel Host header."""
-    if row.get('shareAddrStrategy')=='custom' and row.get('shareAddr')==state['domain']:return None
+    desired={'shareAddrStrategy':'custom','shareAddr':state['domain']}
+    if 'role' in state:desired['remark']=marker(state,{})
+    if all(row.get(k)==v for k,v in desired.items()):return None
     result=copy.deepcopy(row)
-    result.update(shareAddrStrategy='custom',shareAddr=state['domain'])
+    result.update(desired)
     return result
+
+def check_relay(template,inbound_tag,peer):
+    """Verify the unconditional relay rule without changing deployed defaults."""
+    expected=relay_template(template,inbound_tag,peer)
+    if expected!=template:raise SetupError('Managed relay routing differs')

@@ -8,6 +8,8 @@ SSH_PENDING=no
 RESET_PENDING=no
 RESTORE_STAGE=''
 RESTORE_OLD=''
+TELEMT=no
+TELEMT_NEW=no
 log() { printf '[+] %s\n' "$*"; }
 warn() { printf '[!] %s\n' "$*" >&2; }
 die() { warn "$*"; exit 1; }
@@ -28,7 +30,6 @@ secret() {
 }
 valid_domain() { python3 "$APP/helpers/state.py" domain "$1"; }
 valid_port() { [[ $1 =~ ^[1-9][0-9]{0,4}$ ]] && ((10#$1 <= 65535)); }
-valid_user() { [[ $1 =~ ^[a-z][a-z0-9_-]{0,30}$ && $1 != root ]]; }
 valid_panel_user() { [[ $1 =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$ ]]; }
 valid_password() { local LC_ALL=C; [[ $1 =~ ^[\ -~]{16,72}$ && $1 != *:* ]]; }
 generate_password() { openssl rand -hex 24; }
@@ -57,10 +58,15 @@ load_state() {
     ADMIN=$(state_get admin); SSH_PORT=$(state_get ssh_port); PUBLIC_IP=$(state_get public_ip)
     EMAIL=$(state_get email); SUBNET=$(state_get subnet)
     XUI_IMAGE=$(state_get xui_image); NGINX_IMAGE=$(state_get nginx_image)
+    TELEMT=$(state_get telemt)
 }
 cleanup() {
     local code=$?
     trap - EXIT INT TERM HUP ERR
+    if ((code != 0)) && [[ $TELEMT_NEW == yes ]]; then
+        systemctl disable --now mtproxyl-telemt.service || true
+        warn 'New telemt stopped after a failed setup; existing VLESS relay and data retained.'
+    fi
     if [[ -n $RESTORE_OLD && -d $RESTORE_OLD ]]; then
         if [[ -d $ROOT ]]; then
             compose down || true
@@ -118,7 +124,8 @@ preflight() {
 install_app() {
     [[ $APP == "$ROOT/app" ]] && return 0
     install -d -m 700 "$ROOT/app"
-    cp -a "$APP/." "$ROOT/app/"
+    # Copy runtime sources only; never install Git history or development artifacts.
+    cp -a "$APP/install.sh" "$APP/README.md" "$APP/lib" "$APP/helpers" "$APP/templates" "$APP/config" "$ROOT/app/"
     chown -R root:root "$ROOT/app"
     chmod 700 "$ROOT/app/install.sh"
     APP="$ROOT/app"

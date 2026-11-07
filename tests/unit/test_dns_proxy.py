@@ -40,4 +40,4 @@ def test_site_update_preserves_compose_nginx_database(tmp_path,statefile):
     for name in ('compose.yml','nginx.conf','db/x-ui.db','conf.d/tls.conf','site/custom.txt'):
         assert (tmp_path/name).read_text()=='DO NOT CHANGE'
     assert 'HAHA BENIS' in (tmp_path/'site/index.html').read_text()
-    assert 'warpBtn' in (tmp_path/'site/app.js').read_text()
+    assert not (tmp_path/'site/app.js').exists()

@@ -20,6 +20,7 @@ import json,sys
 old,new=(json.load(open(p)) for p in sys.argv[1:])
 for key in ('role','domain','ssh_port','admin','public_ip','subnet'):
     assert old[key]==new[key], 'Identity change requires a manual recovery plan: '+key
+assert old.get('telemt',False)==new.get('telemt',False), 'Backup has a different telemt mode; native telemt recovery is manual'
 EOF
     then rm -rf -- "$stage"; die 'Backup belongs to a different stack identity'; fi
     confirm 'Restore stack DB/site/certs/config/code from this backup? System SSH/UFW and legacy services are left as they are'
@@ -29,7 +30,17 @@ EOF
     RESTORE_OLD=$old
     mv -- "$ROOT" "$old"
     mv -- "$stage/stack" "$ROOT"
-    if ! (load_state && compose config --quiet && compose up -d && wait_healthy vps-xui && wait_healthy vps-nginx && docker exec vps-nginx nginx -t); then
+    # Do not put these functions in an `if`/`&&` context: Bash disables errexit
+    # throughout their bodies there, which could accept a partially failed restore.
+    if ! bash -Eeuo pipefail -c '
+        source "$1/install.sh"
+        load_state
+        compose config --quiet
+        compose up -d
+        wait_healthy vps-xui
+        wait_healthy vps-nginx
+        docker exec vps-nginx nginx -t
+    ' restore-check "$ROOT/app"; then
         compose down || true
         mv -- "$ROOT" "$stage/failed-stack"
         mv -- "$old" "$ROOT"
@@ -69,8 +80,10 @@ EOF
 uninstall_stack() {
     printf 'Remove ONLY: vps-xui, vps-nginx, their Compose network, managed renewal/backup/firewall units.\n'
     printf 'KEEP: %s (DB, site, certificates, code), %s, SSH, users, UFW rules, Docker and legacy services.\n' "$ROOT" "$BACKUPS"
+    if [[ $TELEMT == yes ]]; then printf 'Also stop the opted-in native telemt service; retain /opt/mtproxyl and its secrets.\n'; fi
     confirm 'Stop and uninstall this managed stack? Data are preserved; deletion must be performed separately by the administrator'
     backup_stack
+    if [[ $TELEMT == yes ]]; then systemctl disable --now mtproxyl-telemt.service; fi
     systemctl disable --now vps-installer-renew.timer vps-installer-backup.timer vps-installer-firewall.service
     compose down
     # The detached subnet is no longer used. Do not flush or delete a shared chain.

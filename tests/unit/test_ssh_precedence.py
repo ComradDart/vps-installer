@@ -78,3 +78,17 @@ def test_real_rollback_preserves_provider_and_prior_managed_config(ssh_fixture,t
     else:
         assert not managed.exists()
         assert effective('root')['permitrootlogin']=='yes'
+
+
+def test_staging_preserves_existing_root_password_login(ssh_fixture):
+    snippets,vendor,main,effective=ssh_fixture
+    managed=snippets/'00-00-vps-installer.conf'
+    vendor.unlink()
+    managed.write_text('PermitRootLogin yes\nPasswordAuthentication yes\nPort 22\n')
+    staging=snippets/'00-00-00-vps-staging.conf'
+    staging.write_text('Port 2222\nPort 22\nPubkeyAuthentication yes\n')
+    assert effective('root')['permitrootlogin']=='yes'
+    assert effective('root')['passwordauthentication']=='yes'
+    staging.unlink();managed.write_text(managed_config(2222))
+    assert effective('root')['permitrootlogin']=='no'
+    assert effective('vpsadmin')['passwordauthentication']=='no'

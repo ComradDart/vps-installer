@@ -14,7 +14,10 @@ def test_rename_does_not_break_ownership_or_create_a_duplicate(tmp_path,config):
     assert not created and row['id']==cache['inbound_id']
     assert owned_inbound(api.inbounds(),engine.state,engine.profile,cache)['remark']=='My renamed inbound'
     engine.provision(public=False)
-    assert api.row==original and api.writes==[]
+    assert api.row['remark']=='IN · Client VLESS'
+    for key in ('id','tag','port','settings','streamSettings'):assert api.row[key]==original[key]
+    writes=len(api.writes);engine.provision(public=False)
+    assert len(api.writes)==writes
 
 
 def test_migration_preserves_a_user_supplied_display_name(tmp_path,config):

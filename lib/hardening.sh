@@ -3,8 +3,8 @@ base_packages() {
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends ca-certificates curl gnupg openssl sudo ufw fail2ban \
-        unattended-upgrades chrony python3-systemd jq nftables iptables openssh-server dnsutils python3 python3-bcrypt \
-        sqlite3 rsync ripgrep certbot procps
+        unattended-upgrades chrony python3-systemd iptables openssh-server dnsutils python3 python3-bcrypt \
+        ripgrep certbot procps
     # No blanket apt upgrade, dist-upgrade, kernel hold, or scheduled reboot.
 }
 wait_fail2ban() {

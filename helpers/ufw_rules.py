@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os,re,subprocess,sys
 allowed={p+'/tcp' for p in (sys.argv[1],'80','443')}
+if '--telemt' in sys.argv[2:]:allowed.add('9443/tcp')
 text=subprocess.check_output(['ufw','status'],text=True,env={**os.environ,'LC_ALL':'C'})
 assert 'Status: active' in text,'UFW not active'
 extra=[]

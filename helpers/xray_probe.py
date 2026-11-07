@@ -16,7 +16,7 @@ def probe(docker,root,peer,expected_ip,url='https://api4.ipify.org?format=json',
     path=temporary/'client.json';private_json(path,config)
     try:
         image=image or docker.inspect(docker.container)['Config']['Image']
-        docker.run('run','-d','--name',name,'--network',docker.network,'--log-driver','none','--user',str(os.getuid())+':'+str(os.getgid()),'--cap-drop','ALL','--security-opt','no-new-privileges:true','-v',str(path)+':/client.json:ro',*mounts,'--entrypoint',docker.binary(),image,'run','-config','/client.json')
+        docker.run('run','--rm','-d','--name',name,'--network',docker.network,'--log-driver','none','--user',str(os.getuid())+':'+str(os.getgid()),'--cap-drop','ALL','--security-opt','no-new-privileges:true','-v',str(path)+':/client.json:ro',*mounts,'--entrypoint',docker.binary(),image,'run','-config','/client.json')
         for _ in range(20):
             try:docker.run('exec',name,'timeout','2','bash','-c','exec 3<>/dev/tcp/127.0.0.1/1080',timeout=5);break
             except SetupError:time.sleep(.2)

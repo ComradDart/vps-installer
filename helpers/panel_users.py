@@ -353,7 +353,7 @@ class Manager:
         self.owned(user)
         print('ssh -N -T -o ExitOnForwardFailure=yes '
               f'-p {self.state["ssh_port"]} -i ~/.ssh/3xui_key '
-              f'-L 2053:127.0.0.1:2053 {user}@{self.state["public_ip"]}')
+              f'-L 127.0.0.1:2053:127.0.0.1:2053 {user}@{self.state["public_ip"]}')
         print('Open http://127.0.0.1:2053 and use the EXISTING 3x-ui admin login/password.')
         print('If local port 2053 is busy, use -L 12053:127.0.0.1:2053 and open http://127.0.0.1:12053.')
 

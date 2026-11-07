@@ -5,6 +5,7 @@ status_stack() {
     ss -lntup
     ufw status verbose
     systemctl list-timers 'vps-installer-*' --no-pager
+    if [[ $TELEMT == yes ]]; then systemctl --no-pager --full status mtproxyl-telemt.service; fi
 }
 check_security_updates() {
     local report="$ROOT/unattended-upgrade-check.log" code
@@ -24,15 +25,18 @@ check_stack() {
     compose config --quiet
     [[ -s $ROOT/transport.json ]] || die 'No managed transport selected; run --configure-xray first'
     local mode
+    local -a extra=()
+    if [[ $TELEMT == yes ]]; then extra=(--telemt); fi
     mode=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["mode"])' "$ROOT/transport.json")
-    python3 "$APP/helpers/publications.py" "$mode"
+    python3 "$APP/helpers/publications.py" "$mode" "${extra[@]}"
     python3 "$APP/helpers/db.py" integrity "$ROOT/db/x-ui.db"
+    python3 "$APP/helpers/db.py" single-user "$ROOT/db/x-ui.db"
     docker exec vps-nginx nginx -t
     ssh_effective
     /usr/sbin/sshd -t
     ufw status | rg -q '^Status: active$' || die 'UFW is not active'
     ufw status verbose | rg -q 'Default: deny \(incoming\), allow \(outgoing\)' || die 'Unexpected UFW defaults'
-    python3 "$APP/helpers/ufw_rules.py" "$SSH_PORT"
+    python3 "$APP/helpers/ufw_rules.py" "$SSH_PORT" "${extra[@]}"
     iptables -C DOCKER-USER -d "$SUBNET" ! -s "$SUBNET" -j VPS-INSTALLER
     iptables -C VPS-INSTALLER -j DROP
     fail2ban-client status sshd
@@ -42,9 +46,10 @@ check_stack() {
     curl --noproxy '*' --fail --silent --show-error --max-time 10 --http2 \
         --resolve "$DOMAIN:8443:127.0.0.1" "https://$DOMAIN:8443/" -o /dev/null \
         -w '%{http_version}\n' | rg -qx 2 || die 'Origin HTTP/2 HTTPS check failed'
-    python3 "$APP/helpers/listeners.py" "$SSH_PORT"
+    python3 "$APP/helpers/listeners.py" "$SSH_PORT" "${extra[@]}"
     systemctl is-active --quiet vps-installer-renew.timer vps-installer-backup.timer
     python3 "$APP/helpers/automation.py" check "$ROOT"
+    if [[ $TELEMT == yes ]]; then python3 "$APP/helpers/telemt.py" check "$ROOT"; fi
     # Evaluate effective unattended-upgrades configuration without upgrading packages.
     check_security_updates
     warn 'MANUAL: external scan of SSH/HTTPS and closed panel ports; actual VPS restore and renewal test.'

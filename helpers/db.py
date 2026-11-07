@@ -25,6 +25,8 @@ def main():
             assert row and row[0]==user and bcrypt.checkpw(password.encode(),row[1].encode()), 'Credential verification failed'
     elif op=='has-user':
         with connect(path) as c:assert c.execute('SELECT COUNT(*) FROM users').fetchone()[0]>0
+    elif op=='single-user':
+        with connect(path) as c:assert c.execute('SELECT COUNT(*) FROM users').fetchone()[0]==1
     elif op=='snapshot':
         with connect(path) as src,sqlite3.connect(sys.argv[3]) as dst:src.backup(dst)
         with connect(sys.argv[3]) as c:assert c.execute('PRAGMA integrity_check').fetchone()[0]=='ok'

@@ -85,6 +85,7 @@ set -euo pipefail
 if [[ -f /opt/vps-installer/ssh-before.conf ]]; then
     cp -a /opt/vps-installer/ssh-before.conf /etc/ssh/sshd_config.d/00-00-vps-installer.conf
 else rm -f /etc/ssh/sshd_config.d/00-00-vps-installer.conf; fi
+rm -f /etc/ssh/sshd_config.d/00-00-00-vps-staging.conf
 /usr/sbin/sshd -t
 systemctl daemon-reload
 if systemctl is-active --quiet ssh.socket; then systemctl restart ssh.socket; fi
@@ -98,7 +99,7 @@ EOF
         printf 'Port %s\n' "$SSH_PORT"
         while read -r p; do [[ $p == "$SSH_PORT" ]] || printf 'Port %s\n' "$p"; done <<<"$oldports"
         printf 'PubkeyAuthentication yes\n'
-    } >/etc/ssh/sshd_config.d/00-00-vps-installer.conf
+    } >/etc/ssh/sshd_config.d/00-00-00-vps-staging.conf
     reload_ssh
     ssh_gate
     cat >/etc/ssh/sshd_config.d/00-00-vps-installer.conf <<EOF
@@ -111,6 +112,7 @@ X11Forwarding no
 MaxAuthTries 3
 LoginGraceTime 30
 EOF
+    rm -f /etc/ssh/sshd_config.d/00-00-00-vps-staging.conf
     /usr/sbin/sshd -t
     ssh_effective
     reload_ssh

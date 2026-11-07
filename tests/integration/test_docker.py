@@ -42,12 +42,14 @@ def live():
     ca=base/'ca.pem';ca_key=base/'ca.key';key=root/'tls/privkey.pem';csr=base/'server.csr';cert=root/'tls/fullchain.pem'
     run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',ca_key,'-out',ca,'-days','1','-subj','/CN=Ephemeral integration CA'])
     run(['openssl','req','-newkey','rsa:2048','-nodes','-keyout',key,'-out',csr,'-subj','/CN=example.test'])
-    ext=base/'extensions';ext.write_text('subjectAltName=DNS:example.test\nextendedKeyUsage=serverAuth\n')
+    ext=base/'extensions';ext.write_text('subjectAltName=DNS:example.test,DNS:exit.example.test\nextendedKeyUsage=serverAuth\n')
     run(['openssl','x509','-req','-in',csr,'-CA',ca,'-CAkey',ca_key,'-CAcreateserial','-out',cert,'-days','1','-extfile',ext])
     # Test key only. In production export_certificate installs root:101 mode 640.
     key.chmod(0o644);cert.chmod(0o644);tls(state,root,APP/'templates')
     generated=json.loads(docker('compose','--project-directory',root,'-f',root/'compose.yml','config','--format','json'))
-    for service in generated['services'].values():service['container_name']=ident+'-'+service['container_name']
+    for service in generated['services'].values():
+        service['container_name']=ident+'-'+service['container_name']
+        service['healthcheck'].update(interval='1s',start_period='5s')
     # Managed test environment maps container root outside our host UID range.
     # Use the task UID and provide the one writable runtime config file explicitly.
     # Production VPS runs xui with its normal container root and cap_drop ALL.
@@ -57,7 +59,7 @@ def live():
     init=ident+'-init'
     docker('create','--name',init,'--network','none','--entrypoint','/bin/true',versions['xui_image'])
     try:docker('cp',init+':/app/bin',base/'bin')
-    finally:docker('rm',init)
+    finally:docker('rm','-v',init)
     generated['services']['xui']['volumes'].append(dict(type='bind',source=str(base/'bin'),target='/app/bin'))
     generated['services']['xui']['ports']=[dict(target=2053,published=str(ports['panel']),host_ip='127.0.0.1',protocol='tcp')]
     generated['services']['nginx']['ports']=[dict(target=80,published=str(ports['http']),host_ip='127.0.0.1',protocol='tcp'),dict(target=8443,published=str(ports['tls']),host_ip='127.0.0.1',protocol='tcp')]
@@ -73,8 +75,6 @@ def live():
     try:yield ctx
     finally:
         debug=[]
-        runtime=base/'bin/config.json'
-        if runtime.exists():(APP.parent/'integration-server.json').write_text(runtime.read_text())
         for name in (ctx['xui'],ctx['nginx'],ident+'-client',ident+'-target'):
             result=subprocess.run(['docker','logs','--tail','35',name],capture_output=True,text=True)
             text=result.stdout+result.stderr
@@ -85,7 +85,7 @@ def live():
         (results/'integration-debug.log').write_text('\n'.join(debug))
         for name in (ident+'-client',ident+'-curl',ident+'-target'):
             subprocess.run(['docker','rm','-f',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        try:dc('down','--remove-orphans')
+        try:dc('down','--remove-orphans','--timeout','1','--volumes')
         finally:
             report=results/'integration-results.json';report.write_text(json.dumps(ctx['checkpoints'],indent=2))
             shutil.rmtree(base)

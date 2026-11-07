@@ -20,3 +20,15 @@ test-results/
 /panel-users.json
 /panel-users-transaction.json
 /panel-users-backups/
+
+# Local review/build files and generated credentials
+/work/
+/output/
+.venv/
+*.log
+*.pid
+*.sock
+*.p12
+*.pfx
+id_rsa
+id_ed25519

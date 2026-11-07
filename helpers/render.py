@@ -24,6 +24,7 @@ def render(state,root,templates):
     # Parent /opt/vps-installer remains 0700; bind-mounted paths have their own access.
     managed=profile(root);reality=bool(managed and managed['active'] and managed['mode']=='direct-reality')
     tokens={'XUI_PUBLIC_TLS':"      - '0.0.0.0:443:443/tcp'" if reality else '',
+            'TELEMT_SOCKS':"      - '127.0.0.1:1080:1080/tcp'" if d.get('telemt',False) else '',
             'NGINX_PUBLIC_TLS':'' if reality else "      - '0.0.0.0:443:8443/tcp'",'ROOT':str(root),'DOMAIN':d['domain'],'SUBNET':d['subnet'],
             'XUI_IMAGE':d['xui_image'],'NGINX_IMAGE':d['nginx_image'],
             'TITLE':html.escape(d['title']), 'TEXT':html.escape(d['text'])}
@@ -43,7 +44,7 @@ def site(state,root,templates):
     """Explicit site update: never rewrite Compose or nginx configuration."""
     d=json.loads(Path(state).read_text());validate(d);root=Path(root);templates=Path(templates)
     target=root/'site';target.mkdir(parents=True,exist_ok=True);target.chmod(0o755)
-    for name in ('index.html','style.css','app.js'):
+    for name in ('index.html','style.css'):
         text=(templates/'site'/name).read_text()
         text=text.replace('@@TITLE@@',html.escape(d['title'])).replace('@@TEXT@@',html.escape(d['text']))
         atomic(target/name,text)

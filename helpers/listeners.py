@@ -29,8 +29,9 @@ def networkd_dhcp_client(parts, line):
     )
 
 
-def unexpected_listeners(text, ssh_port):
+def unexpected_listeners(text, ssh_port, telemt=False):
     allowed = {int(ssh_port), 80, 443}
+    if telemt:allowed.add(9443)
     extra = []
     for line in text.splitlines():
         parts = line.split()
@@ -49,7 +50,7 @@ def unexpected_listeners(text, ssh_port):
 
 def main():
     text = subprocess.check_output(['ss', '-H', '-lntup'], text=True)
-    extra = unexpected_listeners(text, sys.argv[1])
+    extra = unexpected_listeners(text, sys.argv[1], '--telemt' in sys.argv[2:])
     if extra:
         print('Unexpected non-loopback host listeners; review UFW and cloud firewall:', file=sys.stderr)
         print('\n'.join(extra), file=sys.stderr)

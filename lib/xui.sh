@@ -17,7 +17,7 @@ xui_cli_credentials() {
     local initial=$1
     # Official CLI has no stdin/password-file option in v3.11.0. Transport to the
     # helper is stdin, not Docker metadata. /app/x-ui temporarily has password in
-    # its own argv: visible to host root/process inspectors. See docs/SECURITY.md.
+    # its own argv: visible to host root/process inspectors. See README.md.
     printf '%s\n%s\n' "$PANEL_USER" "$PANEL_PASSWORD" | docker run --rm -i --network none \
         --log-driver none --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges:true \
         -v "$ROOT/db:/etc/x-ui" --entrypoint /bin/sh "$XUI_IMAGE" -c '
@@ -51,6 +51,7 @@ setup_xui() {
         fresh=yes
     else
         python3 "$APP/helpers/db.py" integrity "$ROOT/db/x-ui.db"
+        python3 "$APP/helpers/db.py" single-user "$ROOT/db/x-ui.db" || die 'Expected one panel administrator; existing accounts were preserved for manual review'
         log 'Existing 3x-ui database preserved; credentials are not changed'
     fi
     compose up -d xui
@@ -63,6 +64,7 @@ setup_xui() {
 reset_xui() {
     require_docker
     [[ -s $ROOT/db/x-ui.db ]] || die 'Existing SQLite panel database required'
+    python3 "$APP/helpers/db.py" single-user "$ROOT/db/x-ui.db" || die 'Password reset requires exactly one existing administrator'
     panel_credentials
     backup_stack
     RESET_PENDING=yes

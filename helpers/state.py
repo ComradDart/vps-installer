@@ -8,14 +8,17 @@ def domain(s):
     return bool(len(s)<=253 and '.' in s and not re.fullmatch(r'[0-9.]+',s) and
                 all(re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?',p) for p in s.split('.')))
 def validate(d):
-    assert set(d) in (FIELDS,FIELDS|{'PUBLIC_DOMAIN'}), 'Unknown or missing state fields'
+    assert FIELDS <= set(d) <= FIELDS|{'PUBLIC_DOMAIN','telemt'}, 'Unknown or missing state fields'
     assert d['schema']=='1'
     assert d['role'] in ('inbound','outbound')
+    assert type(d.get('telemt',False)) is bool, 'telemt must be a boolean'
+    if d.get('telemt'):
+        assert d['role']=='inbound' and d['ssh_port'] not in ('1080','9443'), 'telemt requires INBOUND and free TCP1080/9443'
     assert domain(d['domain'])
     assert d.get('PUBLIC_DOMAIN',d['domain'])==d['domain'], 'PUBLIC_DOMAIN must match this VPS domain'
     assert re.fullmatch(r'[a-z][a-z0-9_-]{0,30}',d['admin']) and d['admin']!='root'
     assert re.fullmatch(r'[1-9][0-9]{0,4}',d['ssh_port']) and int(d['ssh_port'])<=65535
-    assert int(d['ssh_port']) not in (80,443,2053,8443)
+    assert int(d['ssh_port']) not in (80,443,2053,8443,10000)
     assert isinstance(ipaddress.ip_address(d['public_ip']),ipaddress.IPv4Address)
     assert re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',d['email'])
     n=ipaddress.ip_network(d['subnet']);assert n.version==4 and n.prefixlen==24 and any(n.subnet_of(ipaddress.ip_network(r)) for r in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16'))
@@ -44,8 +47,12 @@ def main():
     d=json.loads(Path(path).read_text());validate(d)
     if op=='ensure-public-domain':
         if d['role']=='inbound' and 'PUBLIC_DOMAIN' not in d:write(path,d)
-    elif op=='get': print(d[sys.argv[3]])
-    elif op=='set': d[sys.argv[3]]=sys.argv[4];write(path,d)
+    elif op=='get': print(('yes' if d.get('telemt',False) else 'no') if sys.argv[3]=='telemt' else d[sys.argv[3]])
+    elif op=='set':
+        key,value=sys.argv[3:5]
+        if key=='telemt':
+            assert value in ('yes','no');value=value=='yes'
+        d[key]=value;write(path,d)
     elif op!='validate': raise ValueError('Invalid operation')
     return 0
 if __name__=='__main__':
