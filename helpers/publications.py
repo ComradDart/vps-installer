@@ -12,7 +12,13 @@ def check(rows,reality=False,telemt=False):
         name=row['Name'].lstrip('/')
         assert name in expected and row['State']['Running'], 'Unexpected or stopped container'
         actual={k:{(b['HostIp'],b['HostPort']) for b in v} for k,v in (row['HostConfig'].get('PortBindings') or {}).items() if v}
-        assert actual==expected[name], 'Unexpected Docker PortBindings for '+name
+        if actual!=expected[name]:
+            message='Unexpected Docker PortBindings for '+name
+            if name=='vps-xui' and not telemt and actual=={
+                **expected[name],'1080/tcp':{('127.0.0.1','1080')}
+            }:
+                message+=': local Telemt SOCKS is published but not registered; run --telemt'
+            raise AssertionError(message)
         networks=row['NetworkSettings']['Networks']
         assert set(networks)=={'vps-installer-proxy'}, 'Unexpected Docker networks'
         assert not row['HostConfig'].get('Privileged') and not row['HostConfig'].get('CapAdd'), 'Unexpected privileges'

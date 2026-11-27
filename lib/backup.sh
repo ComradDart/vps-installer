@@ -78,11 +78,12 @@ EOF
     systemctl enable --now vps-installer-backup.timer
 }
 uninstall_stack() {
-    printf 'Remove ONLY: vps-xui, vps-nginx, their Compose network, managed renewal/backup/firewall units.\n'
+    printf 'Remove ONLY: vps-xui, vps-nginx, their Compose network, managed renewal/backup/firewall units and weekly reboot schedule.\n'
     printf 'KEEP: %s (DB, site, certificates, code), %s, SSH, users, UFW rules, Docker and legacy services.\n' "$ROOT" "$BACKUPS"
     if [[ $TELEMT == yes ]]; then printf 'Also stop the opted-in native telemt service; retain /opt/mtproxyl and its secrets.\n'; fi
     confirm 'Stop and uninstall this managed stack? Data are preserved; deletion must be performed separately by the administrator'
     backup_stack
+    disable_weekly_reboot
     if [[ $TELEMT == yes ]]; then systemctl disable --now mtproxyl-telemt.service; fi
     systemctl disable --now vps-installer-renew.timer vps-installer-backup.timer vps-installer-firewall.service
     compose down

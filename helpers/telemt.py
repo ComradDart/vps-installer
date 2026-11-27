@@ -2,7 +2,7 @@
 """Optional native telemt: reuse the existing relay, never configure the peer."""
 import copy,json,re,socket,subprocess,sys,time,tomllib
 from pathlib import Path
-from managed_inbound import decoded,owned_inbound
+from managed_inbound import checked_identity,decoded
 from state import validate,domain
 from transport_profile import profile,relay_peer
 from xui_api import Docker,SetupError,authenticated_api,private_json
@@ -31,16 +31,32 @@ def native_config(d,domain):
     require(len(local)==1 and local[0].get('type')=='direct' and not local[0].get('interface'),'Direct upstream is permitted only for local-mask')
     require(bool(d.get('access',{}).get('users')),'telemt has no configured users; secrets were not regenerated')
 
-def existing_native(state):
+def native_settings():
     cfg=MANAGER/'mtproxy/telemt.toml'
     if not MANAGER.exists():
         require(not UNIT.exists(),'Unrecognized existing telemt unit')
-        return False
+        return None
     require(cfg.is_file() and not cfg.is_symlink(),'Existing /opt/mtproxyl is incomplete; refusing to overwrite it')
-    native_config(tomllib.loads(cfg.read_text()),state['domain'])
+    config=tomllib.loads(cfg.read_text())
     settings=(MANAGER/'settings.conf').read_text()
     require(re.search(r"^ENGINE_BACKEND=['\"]binary['\"]$",settings,re.M) and re.search(r"^ENGINE_SERVICE_NAMING=['\"]standard['\"]$",settings,re.M),'Only the existing standard native MTProxyL service can be adopted')
     require(UNIT.is_file() and not UNIT.is_symlink() and 'ExecStart=/opt/mtproxyl/engine/mtproxyl-telemt run /opt/mtproxyl/mtproxy/telemt.toml' in UNIT.read_text(),'Unexpected native telemt service; no files were changed')
+    return config,settings
+
+def require_manager(settings):
+    manager_values={"MTPROXYL_MODE='manager'", 'MTPROXYL_MODE="manager"'}
+    require(manager_values.intersection(settings.splitlines()),'Switch MTProxyL to Manager before applying changes')
+
+def existing_native(state,allow_missing_scope=False):
+    native=native_settings()
+    if native is None:return False
+    config,settings=native
+    if allow_missing_scope and 'tls_fetch_scope' not in config.get('censorship',{}):
+        require_manager(settings)
+        config.setdefault('censorship',{})['tls_fetch_scope']='local-mask'
+        native_config(config,state['domain'])
+        return 'existing-needs-mask'
+    native_config(config,state['domain'])
     return True
 
 def context(root):
@@ -118,7 +134,7 @@ def transfer(peer,domain):
 def configure(root,check=False):
     state,p,peer=context(root);docker=Docker();api,_=authenticated_api(root,docker)
     cache=json.loads((root/'secrets/managed-xray.json').read_text())
-    rows=api.inbounds();main=owned_inbound(rows,state,p,cache)
+    rows=api.inbounds();main,_=checked_identity(rows,state,p,cache)
     require(main is not None,'Managed VLESS inbound not found; no new VLESS inbound was created')
     before=api.template();relay_route(before,main['tag'],peer)
     path=root/'secrets/telemt.json';saved=json.loads(path.read_text()) if path.exists() else None
@@ -184,9 +200,16 @@ def main():
         if ids:
             for row in json.loads(docker.run('inspect',*ids)):
                 require(not any(b.get('HostPort')=='9443' for bindings in (row['HostConfig'].get('PortBindings') or {}).values() for b in bindings or []),'A Docker container already publishes 9443; it was not changed')
-        exists=existing_native(state)
+        exists=existing_native(state,allow_missing_scope=True)
         if not exists:free_port('0.0.0.0',9443)
-        print('existing' if exists else 'fresh')
+        print(exists if isinstance(exists,str) else 'existing' if exists else 'fresh')
+    elif op=='zapret2-preflight':
+        require(state['role']=='inbound','Zapret2 is supported only on INBOUND')
+        native=native_settings()
+        require(native is not None,'Install native MTProxyL/Telemt before enabling Zapret2')
+        config,settings=native
+        require_manager(settings)
+        require(config.get('server',{}).get('port')==9443,'Expected the native Telemt listener on TCP9443')
     elif op=='configure':configure(root)
     elif op=='check':
         require(existing_native(state),'Native telemt config missing')

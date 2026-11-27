@@ -5,6 +5,11 @@ status_stack() {
     ss -lntup
     ufw status verbose
     systemctl list-timers 'vps-installer-*' --no-pager
+    if [[ -f $WEEKLY_REBOOT_CRON ]]; then
+        log 'Weekly reboot schedule installed: Sunday at 04:00 (VPS local time).'
+    else
+        log 'Weekly reboot is disabled.'
+    fi
     if [[ $TELEMT == yes ]]; then systemctl --no-pager --full status mtproxyl-telemt.service; fi
 }
 check_security_updates() {
@@ -59,4 +64,5 @@ access_instructions() {
     log "HTTPS site: https://$DOMAIN/"
     log "Panel: ssh -N -L 2053:127.0.0.1:2053 -p $SSH_PORT $ADMIN@$PUBLIC_IP"
     log 'Then browse http://127.0.0.1:2053/ . Verified device URI: use --show-client.'
+    if [[ $TELEMT == yes ]]; then telemt_zapret2_hint; fi
 }

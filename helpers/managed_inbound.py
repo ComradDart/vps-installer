@@ -81,6 +81,29 @@ def owned_inbound(rows,state,profile,cache):
     if any(managed_name(r,state,profile) for r in rows):raise SetupError('Managed name exists but its saved client UUID is missing; clients were preserved')
     return None
 
+def checked_identity(rows,state,profile,cache):
+    """Find an existing REALITY inbound even if its installer test client was removed."""
+    saved_id=cache.get('inbound_id')
+    if profile['mode']!='direct-reality' or saved_id is None or any(
+        client.get('id')==cache['uuid']
+        for row in rows for client in decoded(row,'settings').get('clients',[])
+    ):
+        return owned_inbound(rows,state,profile,cache),cache
+    matches=[row for row in rows if row['id']==saved_id and row.get('protocol')=='vless']
+    if len(matches)==1:
+        row=matches[0]
+        clients=decoded(row,'settings').get('clients',[])
+        for client in clients:
+            if client.get('enable') is not True or client.get('flow')!='xtls-rprx-vision':
+                continue
+            try:uuid.UUID(client.get('id',''))
+            except (ValueError,TypeError,AttributeError):continue
+            probe_cache=dict(cache,uuid=client['id'])
+            validate_existing(row,state,profile,probe_cache)
+            return row,probe_cache
+    return owned_inbound(rows,state,profile,cache),cache
+
+
 def ensure(api,state,profile,cache):
     rows=api.inbounds();owned=owned_inbound(rows,state,profile,cache)
     if owned:return validate_existing(owned,state,profile,cache),False

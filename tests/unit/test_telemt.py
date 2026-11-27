@@ -120,13 +120,20 @@ address = "127.0.0.1:1080"
 type = "direct"
 scopes = "local-mask"
 ''')
-    (manager/'settings.conf').write_text("ENGINE_BACKEND='binary'\nENGINE_SERVICE_NAMING='standard'\n")
+    (manager/'settings.conf').write_text("ENGINE_BACKEND='binary'\nENGINE_SERVICE_NAMING='standard'\nMTPROXYL_MODE='manager'\n")
     monkeypatch.setattr(telemt,'MANAGER',manager)
     unit=tmp_path/'telemt.service';monkeypatch.setattr(telemt,'UNIT',unit)
     unit.write_text('ExecStart=/opt/mtproxyl/engine/mtproxyl-telemt run /opt/mtproxyl/mtproxy/telemt.toml\n')
     before={p:p.read_bytes() for p in (unit,manager/'mtproxy/telemt.toml',manager/'settings.conf')}
     assert existing_native(dict(domain='entry.example.test')) is True
     assert all(p.read_bytes()==data for p,data in before.items())
+    cfg=manager/'mtproxy/telemt.toml'
+    cfg.write_text(cfg.read_text().replace('tls_fetch_scope = "local-mask"\n',''))
+    legacy=cfg.read_bytes()
+    with pytest.raises(SetupError,match='local nginx'):
+        existing_native(dict(domain='entry.example.test'))
+    assert existing_native(dict(domain='entry.example.test'),allow_missing_scope=True)=='existing-needs-mask'
+    assert cfg.read_bytes()==legacy
 
 @pytest.mark.parametrize('broken',['middle','direct','mask','api','domain','empty'])
 def test_unsafe_native_config_is_rejected(broken):
@@ -195,3 +202,60 @@ def test_optional_api_addition_is_idempotent_or_rolled_back(tmp_path,config,monk
         assert api.adds==1 and api.sets==1 and len(api.rows)==2
         assert api.tpl['outbounds']==original['outbounds']
     assert api.rows[0]==baseline and (tmp_path/'compose.yml').read_bytes()==before
+
+
+@pytest.mark.parametrize(('role', 'choice', 'selected'), [
+    ('inbound', '9', '--telemt-zapret2'),
+    ('inbound', '8', '--telemt'),
+    ('outbound', '5', '--backup'),
+    ('outbound', '9', None),
+    ('outbound', '0', ''),
+    ('fresh', '1', '--install'),
+    ('fresh', '2', None),
+])
+def test_maintenance_menu_dispatches_existing_commands(tmp_path, role, choice, selected):
+    state = tmp_path / "state.json"
+    if role != "fresh":
+        state.touch()
+    result = subprocess.run(['bash', '-c', '''
+source "$1/lib/maintenance.sh"
+STATE=$4
+load_state() { ROLE=$TEST_ROLE DOMAIN=example.test; }
+TEST_ROLE=$2
+die() { exit 1; }
+ask() { printf -v "$1" '%s' "$test_choice"; }
+test_choice=$3
+maintenance_menu
+printf 'SELECTED=%s\\n' "$menu_command"
+''', 'test', str(APP), role, choice, str(state)], text=True, capture_output=True)
+    if selected is None:
+        assert result.returncode != 0
+        assert 'SELECTED=' not in result.stdout
+    else:
+        assert result.returncode == 0
+        assert f'SELECTED={selected}\n' in result.stdout
+    if role == 'outbound':
+        assert '9. ' not in result.stdout
+
+
+def test_check_recovers_reality_identity_after_removed_test_client():
+    from managed_inbound import checked_identity, payload
+
+    profile = {'mode': 'direct-reality'}
+    state = {'role': 'inbound', 'domain': 'entry.example.test'}
+    saved = dict(uuid='11111111-1111-4111-8111-111111111111',
+                 email='vps-installer-test', inbound_id=7,
+                 private_key='existing-private-key', public_key='existing-public-key',
+                 short_id='1234')
+    active = dict(saved, uuid='22222222-2222-4222-8222-222222222222', email='existing')
+    row = dict(payload(state, profile, active), id=7)
+    original = copy.deepcopy(row)
+    found, probe = checked_identity([row], state, profile, saved)
+    assert found == original and row == original
+    assert probe['uuid'] == active['uuid'] and saved['uuid'] != probe['uuid']
+
+    stream = json.loads(row['streamSettings'])
+    stream['realitySettings']['privateKey'] = 'different-key'
+    row['streamSettings'] = json.dumps(stream)
+    with pytest.raises(SetupError, match='REALITY settings differ'):
+        checked_identity([row], state, profile, saved)

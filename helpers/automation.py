@@ -5,7 +5,7 @@ from pathlib import Path
 from state import validate
 from xui_api import Api,Docker,SetupError,authenticated_api,private_json,private_text,verify_login
 from transport_profile import profile,validate_profile,parse_peer,relay_peer,client_config,client_uri
-from managed_inbound import SERVICE,decoded,marker,planned_cache,ensure,validate_existing,peer_for_client,relay_template,share_address_patch,owned_inbound,check_relay
+from managed_inbound import SERVICE,decoded,marker,planned_cache,ensure,validate_existing,peer_for_client,relay_template,share_address_patch,owned_inbound,checked_identity,check_relay
 from xray_probe import probe
 
 GRPC=(Path(__file__).resolve().parents[1]/'templates/grpc.inc').read_text()
@@ -303,20 +303,20 @@ def main():
         cache_path=root/'secrets/managed-xray.json'
         if not cache_path.exists():raise SetupError('Managed client identity is missing; run --configure-xray to recover it through the API')
         cache=json.loads(cache_path.read_text())
-        rows=api.inbounds();row=owned_inbound(rows,engine.state,engine.profile,cache)
+        rows=api.inbounds();row,probe_cache=checked_identity(rows,engine.state,engine.profile,cache)
         if row is None:
             if any(r['id']==cache.get('inbound_id') for r in rows):raise SetupError('Saved inbound ID exists, but its saved test-client UUID is missing; current clients were preserved')
             raise SetupError('Managed inbound is missing')
-        validate_existing(row,engine.state,engine.profile,cache);engine.actual_bindings()
+        validate_existing(row,engine.state,engine.profile,probe_cache);engine.actual_bindings()
         if engine.profile['topology']=='relay':
             remote=json.loads((root/'secrets/relay.json').read_text());current=api.template()
             check_relay(current,row['tag'],remote)
-        print('Saved inbound ID/UUID and Docker publications: OK',flush=True)
+        print('Managed inbound identity and Docker publications: OK',flush=True)
         print('Checking internal VLESS connection through the selected route...',flush=True)
-        engine.verify_internal(cache)
+        engine.verify_internal(probe_cache)
         print('Internal VLESS connection: PASSED',flush=True)
         print('Checking VLESS connection through the public server address...',flush=True)
-        engine.verify_public(cache)
+        engine.verify_public(probe_cache)
         print('Xray API, inbound, Docker publication and real authenticated client transfer: PASSED');return
     result=engine.provision(public=True,migrate=args.command=='migrate-inbound-reality')
     from public_links import repair

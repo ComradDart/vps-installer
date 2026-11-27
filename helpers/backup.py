@@ -30,12 +30,12 @@ def create(root,backups):
         temp=Path(temp)
         if root.exists():snapshot_tree(root,temp/'stack')
         with tarfile.open(temp/'system.tar.gz','w:gz',dereference=False) as tar:
-            for name in ('/etc/ssh','/etc/ufw','/etc/fail2ban','/etc/apt/apt.conf.d','/etc/sysctl.d','/etc/vps-setup.conf'):
+            for name in ('/etc/ssh','/etc/ufw','/etc/fail2ban','/etc/apt/apt.conf.d','/etc/sysctl.d','/etc/vps-setup.conf','/etc/cron.d/vps-installer-reboot'):
                 if Path(name).exists():tar.add(name,arcname=name.lstrip('/'))
             # Optional native manager: configuration/secrets only, never its recursive
             # backups or downloaded binaries. System snapshot is for manual recovery.
             manager=Path('/opt/mtproxyl')
-            for name in ('settings.conf','secrets.conf','upstreams.conf','expert.conf','mtproxy/telemt.toml'):
+            for name in ('settings.conf','secrets.conf','upstreams.conf','expert.conf','nft-rules.conf','mtproxy/telemt.toml'):
                 path=manager/name
                 if path.is_file() and not path.is_symlink():tar.add(path,arcname=str(path).lstrip('/'))
             unit=Path('/etc/systemd/system/mtproxyl-telemt.service')

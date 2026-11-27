@@ -8,6 +8,7 @@ SSH_PENDING=no
 RESET_PENDING=no
 RESTORE_STAGE=''
 RESTORE_OLD=''
+APP_STAGE=''
 TELEMT=no
 TELEMT_NEW=no
 log() { printf '[+] %s\n' "$*"; }
@@ -86,6 +87,15 @@ cleanup() {
         "$ROOT/ssh-rollback.sh" || warn "SSH rollback failed; use provider console: $ROOT/ssh-rollback.sh"
         systemctl stop vps-installer-ssh-rollback.timer || true
     fi
+    if [[ -n $APP_STAGE && -d $APP_STAGE ]]; then
+        if [[ ! -e $ROOT/app && -d $APP_STAGE/previous ]]; then
+            if ! mv -- "$APP_STAGE/previous" "$ROOT/app"; then
+                warn "Installer rollback failed; previous sources retained at $APP_STAGE/previous"
+                exit "$code"
+            fi
+        fi
+        rm -rf -- "$APP_STAGE"
+    fi
     if [[ -n $TMPDIR_TASK && -d $TMPDIR_TASK ]]; then rm -rf -- "$TMPDIR_TASK"; fi
     ((code == 0)) || warn "Stopped (exit $code). Existing data retained. Inspect --status and backups in $BACKUPS."
     exit "$code"
@@ -123,10 +133,15 @@ preflight() {
 }
 install_app() {
     [[ $APP == "$ROOT/app" ]] && return 0
-    install -d -m 700 "$ROOT/app"
-    # Copy runtime sources only; never install Git history or development artifacts.
-    cp -a "$APP/install.sh" "$APP/README.md" "$APP/lib" "$APP/helpers" "$APP/templates" "$APP/config" "$ROOT/app/"
-    chown -R root:root "$ROOT/app"
-    chmod 700 "$ROOT/app/install.sh"
+    APP_STAGE=$(mktemp -d "$ROOT/.app-stage.XXXXXX")
+    install -d -m 700 "$APP_STAGE/new"
+    # Stage the entire source tree before switching the installed copy.
+    cp -a "$APP/get.sh" "$APP/install.sh" "$APP/README.md" "$APP/lib" "$APP/helpers" "$APP/templates" "$APP/config" "$APP_STAGE/new/"
+    chown -R root:root "$APP_STAGE/new"
+    chmod 700 "$APP_STAGE/new/install.sh"
+    if [[ -e $ROOT/app ]]; then mv -- "$ROOT/app" "$APP_STAGE/previous"; fi
+    mv -- "$APP_STAGE/new" "$ROOT/app"
+    rm -rf -- "$APP_STAGE"
+    APP_STAGE=''
     APP="$ROOT/app"
 }

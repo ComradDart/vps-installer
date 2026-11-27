@@ -42,6 +42,22 @@ with tarfile.open(archive,'r:gz') as tar:
 if not (root/'vps-installer-main/install.sh').is_file():raise SystemExit('Installer missing in archive')
 PY
 }
+bootstrap_fetch() {
+    local destination=$1 package
+    package="$destination/source.tar.gz"
+    local url=https://codeload.github.com/ComradDart/vps-installer/tar.gz/refs/heads/main
+    printf '[+] Downloading ComradDart/vps-installer from GitHub over HTTPS\n'
+    if command -v curl >/dev/null 2>&1; then
+        if ! curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' \
+            --connect-timeout 20 --max-time 180 --retry 2 "$url" -o "$package"; then
+            printf 'Download failed; check GitHub connectivity and public repository availability.\n' >&2
+            return 1
+        fi
+    else
+        wget --https-only --timeout=30 --tries=3 -O "$package" "$url"
+    fi
+    bootstrap_extract "$package" "$destination"
+}
 bootstrap_main() {
     if [[ ${1:-} == --help || ${1:-} == -h ]]; then
         printf 'Usage: sudo bash get.sh [installer arguments]\nDownloads public ComradDart/vps-installer main into a temporary directory; no Git required.\nTargets: Debian 12/13, Ubuntu 24.04/26.04 LTS.\n'
@@ -61,7 +77,7 @@ bootstrap_main() {
     trap bootstrap_cleanup EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM HUP
-    local package command missing=no
+    local command missing=no
     for command in python3 flock; do command -v "$command" >/dev/null 2>&1 || missing=yes; done
     if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then missing=yes; fi
     if [[ ! -s /etc/ssl/certs/ca-certificates.crt ]]; then missing=yes; fi
@@ -71,19 +87,7 @@ bootstrap_main() {
         apt-get update
         apt-get install -y --no-install-recommends ca-certificates curl python3 util-linux
     fi
-    package="$BOOTSTRAP_TEMP/source.tar.gz"
-    local url=https://codeload.github.com/ComradDart/vps-installer/tar.gz/refs/heads/main
-    printf '[+] Downloading ComradDart/vps-installer from GitHub over HTTPS\n'
-    if command -v curl >/dev/null 2>&1; then
-        if ! curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' \
-            --connect-timeout 20 --max-time 180 --retry 2 "$url" -o "$package"; then
-            printf 'Download failed; check GitHub connectivity and public repository availability.\n' >&2
-            return 1
-        fi
-    else
-        wget --https-only --timeout=30 --tries=3 -O "$package" "$url"
-    fi
-    bootstrap_extract "$package" "$BOOTSTRAP_TEMP"
+    bootstrap_fetch "$BOOTSTRAP_TEMP"
     # Keep the parent process for guaranteed temporary-directory cleanup.
     bash "$BOOTSTRAP_TEMP/vps-installer-main/install.sh" "$@"
 }

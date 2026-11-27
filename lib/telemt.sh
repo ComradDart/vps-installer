@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # TELEMT_NEW is consumed by cleanup in common.sh.
 # No actions at source time. OUTBOUND and the default "no" path do not install anything.
 telemt_offer() {
     [[ ${ROLE:-} == inbound ]] || return 0
@@ -18,11 +19,16 @@ telemt_manager() {
     fi
 }
 setup_telemt() {
-    [[ $TELEMT == yes ]] || return 0
+    [[ ${1:-$TELEMT} == yes ]] || return 0
     [[ $ROLE == inbound ]] || die 'telemt is supported only on INBOUND'
     local kind
     local -a packages=()
     kind=$(python3 "$APP/helpers/telemt.py" preflight "$ROOT")
+    if [[ $kind == existing-needs-mask ]]; then
+        telemt_manager backup
+        telemt_manager expert set censorship tls_fetch_scope local-mask --no-apply
+        telemt_manager restart
+    fi
     log 'telemt: preserving the existing VPS relay. Adding local SOCKS may briefly restart xui; nginx, SSH and OUTBOUND stay as configured.'
     python3 "$APP/helpers/telemt.py" configure "$ROOT"
     if [[ $kind == fresh ]]; then
@@ -67,8 +73,32 @@ PY
     fi
     python3 "$APP/helpers/telemt.py" check "$ROOT"
     # Native host INPUT traffic: do not open 9443 in Docker's forwarding guard.
+    systemctl enable mtproxyl-telemt.service
     ufw allow 9443/tcp comment 'vps-installer telemt'
     state_set telemt yes
     TELEMT_NEW=no
     log 'telemt ready on TCP9443. Client links: sudo mtproxyl secret link (contains secrets).'
+}
+
+telemt_zapret2_hint() {
+    warn 'Если MTProxy не подключается или обрывается в мобильной сети, запустите установщик повторно с --telemt-zapret2.'
+    warn "Команда на INBOUND: sudo $ROOT/app/install.sh --telemt-zapret2"
+}
+setup_telemt_zapret2() {
+    [[ $ROLE == inbound ]] || die 'Zapret2 for Telemt is supported only on INBOUND'
+    python3 "$APP/helpers/telemt.py" zapret2-preflight "$ROOT"
+    systemctl is-active --quiet mtproxyl-telemt.service || die 'Start the native MTProxyL/Telemt service first'
+    [[ -x /usr/local/bin/mtproxyl ]] || die 'MTProxyL is not installed'
+    backup_stack
+    install_app
+    /usr/local/bin/mtproxyl nft set ZAPRET2_PORT 9443
+    /usr/local/bin/mtproxyl nft set ZAPRET2_EXTRA_PORTS ''
+    /usr/local/bin/mtproxyl nft set ZAPRET2_HOOK host
+    if [[ $(systemctl show -p LoadState --value mtproxyl-zapret2.service) == loaded ]]; then
+        /usr/local/bin/mtproxyl nft zapret2-start
+    else
+        /usr/local/bin/mtproxyl nft zapret2
+    fi
+    systemctl is-active --quiet mtproxyl-zapret2.service || die 'Zapret2 did not start; inspect journalctl -u mtproxyl-zapret2'
+    log 'Zapret2 is active on TCP9443. Test the existing Telegram profile over mobile data.'
 }

@@ -10,17 +10,19 @@ export DOCKER_HOST=unix:///var/run/docker.sock
 APP=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 # shellcheck source=lib/common.sh
 source "$APP/lib/common.sh"
-for module in hardening ssh firewall docker xui nginx certificates backup checks automation telemt; do
+for module in hardening ssh firewall docker xui nginx certificates backup maintenance checks automation telemt; do
     # shellcheck source=/dev/null
     source "$APP/lib/$module.sh"
 done
 usage() {
     cat <<'EOF'
 Usage: sudo ./install.sh [command]
-  (none)                   Install or resume same saved role/identity
+  (none), --menu           Open interactive installation and maintenance menu
+  --install                Install or resume the saved role/identity
   --help                   Show help (no root/mutations needed)
-  --update                 Install this source copy after backup (run from fresh sources)
+  --update                 Update installer code after backup; keep deployed services running
   --telemt                 Opt in to native MTProxyL/telemt on INBOUND TCP9443; reuse relay
+  --telemt-zapret2          Install or apply the optional Zapret2 fix on INBOUND TCP9443
   --status                 Show saved state, containers, sockets, timers
   --check                  Verify infrastructure and real authenticated VLESS transfer
   --check-xray             Verify Xray API, ports and real VLESS transfer only
@@ -34,6 +36,8 @@ Usage: sudo ./install.sh [command]
   --panel-users            Manage individual SSH keys/tunnel-only Linux accounts
   --repair-client-links    Repair panel-generated public links/QR without changing Xray
   --backup                 Consistent SQLite/local configuration backup
+  --reboot-weekly-on       Enable reboot Sunday at 04:00 in the VPS time zone
+  --reboot-weekly-off      Disable the installer's weekly reboot
   --restore /absolute/file.tar.gz
                            Restore same stack identity, preserving current host SSH/UFW
   --uninstall              Stop/remove managed containers/units; preserve all data/security
@@ -137,7 +141,7 @@ reconfigure_site() {
     install_app
     python3 "$APP/helpers/render.py" site "$TMPDIR_TASK/site-state.json" "$ROOT" "$APP/templates"
     install -m 600 "$TMPDIR_TASK/site-state.json" "$STATE"
-    nginx_validate_reload
+    log 'Site content updated.'
 }
 main() {
     case "${1:-}" in --help|-h) [[ $# == 1 ]] || die 'Unexpected arguments'; usage; return;; esac
@@ -148,27 +152,32 @@ main() {
             exec python3 "$APP/helpers/ssh_gate.py" confirm "$ROOT" "$2" "$3";;
         --restore) [[ $# == 2 ]] || die 'Use --restore /absolute/backup.tar.gz';;
         --check-xray-client|--show-client-for) [[ $# == 2 && -n $2 ]] || die 'Specify the client email shown in the panel';;
-        ''|--update|--telemt|--status|--check|--check-xray|--configure-xray|--migrate-inbound-reality|--show-client|--panel-users|--repair-client-links|--reconfigure|--reset-3xui-password|--backup|--uninstall|--apply-docker-firewall|--renew)
+        ''|--update|--telemt|--telemt-zapret2|--install|--menu|--status|--check|--check-xray|--configure-xray|--migrate-inbound-reality|--show-client|--panel-users|--repair-client-links|--reconfigure|--reset-3xui-password|--backup|--reboot-weekly-on|--reboot-weekly-off|--uninstall|--apply-docker-firewall|--renew)
             (( $# <= 1 )) || die 'Unexpected arguments';;
         *) die 'Unknown command; see --help';;
     esac
     init_runtime
-    if [[ ${1:-} == '' ]]; then install_main; return; fi
+    if [[ ${1:-"--menu"} == --menu ]]; then
+        local menu_command
+        maintenance_menu
+        [[ -n $menu_command ]] || return 0
+        set -- "$menu_command"
+    fi
+    if [[ $1 == --install ]]; then install_main; return; fi
     load_state
     case "$1" in
-        --update)
-            [[ $APP != "$ROOT/app" ]] || die 'Run --update from freshly downloaded sources: git pull --ff-only, then sudo bash ./install.sh --update'
-            backup_stack
-            install_app
-            log 'Installer code updated. Server configurations and containers were not changed.';;
+        --reboot-weekly-on) enable_weekly_reboot;;
+        --reboot-weekly-off) disable_weekly_reboot;;
+        --telemt-zapret2) setup_telemt_zapret2;;
+        --update) update_installer;;
         --panel-users) install_app; python3 "$APP/helpers/panel_users.py" menu "$ROOT";;
         --telemt)
             [[ $ROLE == inbound ]] || die 'telemt is supported only on INBOUND'
             require_docker
             backup_stack
             install_app
-            TELEMT=yes
-            setup_telemt;;
+            setup_telemt yes
+            telemt_zapret2_hint;;
         --repair-client-links) require_docker; backup_stack; install_app; python3 "$APP/helpers/automation.py" repair-links "$ROOT";;
         --status) status_stack;;
         --configure-xray) configure_xray; check_stack; state_set phase ready;;
