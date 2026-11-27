@@ -103,7 +103,19 @@ def socks_inbound(rows,cache=None):
     # Older 3x-ui rows can omit streamSettings when mixed uses plain TCP.
     raw_stream=row.get('streamSettings')
     stream={} if raw_stream is None or (isinstance(raw_stream,str) and not raw_stream.strip()) else decoded(row,'streamSettings')
-    require(row['protocol']=='mixed' and row['listen']=='0.0.0.0' and row['enable'] is True and settings.get('auth')=='noauth' and settings.get('udp') is False and not settings.get('accounts') and stream.get('security','none')=='none' and stream.get('network','tcp') in ('tcp','raw'),'TCP1080 belongs to a different inbound; it was not overwritten')
+    problems=[
+        field for field,valid in (
+            ('protocol (expected SOCKS or mixed)',row.get('protocol') in ('socks','mixed')),
+            ('listen (expected default or 0.0.0.0 inside Docker)',row.get('listen','') in ('','0.0.0.0')),
+            ('enable (expected true)',row.get('enable') is True),
+            ('auth (expected noauth without accounts)',settings.get('auth','noauth')=='noauth'
+             and not settings.get('accounts') and not settings.get('users')),
+            ('UDP (expected disabled)',settings.get('udp',False) is False),
+            ('security (expected none)',stream.get('security','none')=='none'),
+            ('network (expected TCP/raw)',stream.get('network','tcp') in ('tcp','raw')),
+        ) if not valid
+    ]
+    require(not problems,'Existing TCP1080 inbound is incompatible: '+'; '.join(problems)+'. No inbound was overwritten.')
     if cache:require(row['id']==cache['inbound_id'] and row['tag']==cache['tag'],'Saved SOCKS identity changed; no inbound was overwritten')
     return row
 

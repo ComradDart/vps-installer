@@ -315,3 +315,20 @@ def test_legacy_socks_inbound_rejects_unexpected_stream_settings(stream):
                streamSettings=stream)
     with pytest.raises(SetupError):
         socks_inbound([row])
+
+
+@pytest.mark.parametrize('protocol', ['mixed', 'socks'])
+def test_socks_adoption_accepts_xray_defaults(protocol):
+    row = dict(id=2, tag='in-1080-tcp', port=1080, protocol=protocol, listen='',
+               enable=True, settings='{}', streamSettings='')
+    assert socks_inbound([row], dict(inbound_id=2, tag='in-1080-tcp')) == row
+
+
+def test_socks_adoption_reports_incompatible_fields_without_credentials():
+    row = dict(id=2, tag='in-1080-tcp', port=1080, protocol='socks',
+               listen='127.0.0.1', enable=True,
+               settings=dict(auth='password', udp=True, users=[{'pass': 'do-not-print'}]))
+    with pytest.raises(SetupError) as error:
+        socks_inbound([row])
+    assert all(field in str(error.value) for field in ('listen', 'auth', 'UDP'))
+    assert 'do-not-print' not in str(error.value)
