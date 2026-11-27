@@ -1,5 +1,5 @@
 import subprocess
-from conftest import APP
+from conftest import APP, bash
 
 
 def simulate(tmp_path, failure=False):
@@ -50,3 +50,17 @@ def test_previous_log_permissions_are_restricted(tmp_path):
     assert simulate(tmp_path).returncode == 0
     assert report.stat().st_mode & 0o777 == 0o600
     assert 'old output' not in report.read_text()
+
+
+def test_unsynchronised_clock_reports_sources_and_returns_failure():
+    result = bash('''
+source "$APP/lib/checks.sh"
+chronyc() {
+    printf '%s\\n' "$*"
+    [[ $1 != waitsync ]]
+}
+check_clock
+''')
+    assert result.returncode == 1
+    assert result.stdout.splitlines() == ['waitsync 5 0.5 0 2', 'tracking', '-n sources -v']
+    assert 'did not synchronise' in result.stderr

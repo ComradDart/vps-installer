@@ -98,7 +98,11 @@ def socks_inbound(rows,cache=None):
     rows=[r for r in rows if int(r['port'])==1080]
     require(len(rows)<=1,'Multiple inbounds use TCP1080')
     if not rows:return None
-    row=rows[0];settings=decoded(row,'settings');stream=decoded(row,'streamSettings')
+    row=rows[0]
+    settings=decoded(row,'settings')
+    # Older 3x-ui rows can omit streamSettings when mixed uses plain TCP.
+    raw_stream=row.get('streamSettings')
+    stream={} if raw_stream is None or (isinstance(raw_stream,str) and not raw_stream.strip()) else decoded(row,'streamSettings')
     require(row['protocol']=='mixed' and row['listen']=='0.0.0.0' and row['enable'] is True and settings.get('auth')=='noauth' and settings.get('udp') is False and not settings.get('accounts') and stream.get('security','none')=='none' and stream.get('network','tcp') in ('tcp','raw'),'TCP1080 belongs to a different inbound; it was not overwritten')
     if cache:require(row['id']==cache['inbound_id'] and row['tag']==cache['tag'],'Saved SOCKS identity changed; no inbound was overwritten')
     return row

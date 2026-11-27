@@ -297,3 +297,21 @@ active=$3
 stack_uses_telemt
 ''', role, saved, active)
     assert (result.returncode == 0) is expected
+
+
+@pytest.mark.parametrize('stream', [None, '', '  ', '{}', {}])
+def test_legacy_socks_inbound_allows_default_stream_settings(stream):
+    row = dict(id=2, tag='in-1080-tcp', port=1080, protocol='mixed',
+               listen='0.0.0.0', enable=True, settings=dict(auth='noauth', udp=False))
+    if stream is not None:
+        row['streamSettings'] = stream
+    assert socks_inbound([row], dict(inbound_id=2, tag='in-1080-tcp')) == row
+
+
+@pytest.mark.parametrize('stream', ['invalid JSON', '[]', '{"security":"tls"}', '{"network":"ws"}'])
+def test_legacy_socks_inbound_rejects_unexpected_stream_settings(stream):
+    row = dict(id=2, tag='in-1080-tcp', port=1080, protocol='mixed',
+               listen='0.0.0.0', enable=True, settings=dict(auth='noauth', udp=False),
+               streamSettings=stream)
+    with pytest.raises(SetupError):
+        socks_inbound([row])

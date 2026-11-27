@@ -25,6 +25,16 @@ check_security_updates() {
         die "Inspect $report for the full simulation output"
     fi
 }
+check_clock() {
+    if chronyc waitsync 5 0.5 0 2; then
+        chronyc tracking
+        return
+    fi
+    warn 'Chrony did not synchronise. Showing NTP diagnostics and continuing the other checks.'
+    chronyc tracking || true
+    chronyc -n sources -v || true
+    return 1
+}
 stack_uses_telemt() {
     [[ $TELEMT == yes ]] ||
         { [[ $ROLE == inbound ]] && systemctl is-active --quiet mtproxyl-telemt.service; }
@@ -33,12 +43,12 @@ check_stack() {
     require_docker
     compose config --quiet
     [[ -s $ROOT/transport.json ]] || die 'No managed transport selected; run --configure-xray first'
-    local mode
+    local mode clock_failed=no
     local -a extra=()
     if stack_uses_telemt; then
         extra=(--telemt)
         if [[ $TELEMT != yes ]]; then
-            warn 'Обнаружен запущенный Telemt без регистрации. Проверяю его текущую конфигурацию. Для регистрации выберите пункт 8.'
+            warn 'Telemt запущен. В состоянии установщика нет отметки о подключении. Проверяю текущую конфигурацию.'
         fi
     fi
     mode=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["mode"])' "$ROOT/transport.json")
@@ -54,8 +64,7 @@ check_stack() {
     iptables -C DOCKER-USER -d "$SUBNET" ! -s "$SUBNET" -j VPS-INSTALLER
     iptables -C VPS-INSTALLER -j DROP
     fail2ban-client status sshd
-    chronyc waitsync 5 0.5 0 2
-    chronyc tracking
+    check_clock || clock_failed=yes
     validate_certificate
     curl --noproxy '*' --fail --silent --show-error --max-time 10 --http2 \
         --resolve "$DOMAIN:8443:127.0.0.1" "https://$DOMAIN:8443/" -o /dev/null \
@@ -66,6 +75,9 @@ check_stack() {
     if ((${#extra[@]})); then python3 "$APP/helpers/telemt.py" check "$ROOT"; fi
     # Evaluate effective unattended-upgrades configuration without upgrading packages.
     check_security_updates
+    if [[ $clock_failed == yes ]]; then
+        die 'Clock check failed: inspect chronyc tracking and chronyc -n sources -v. If Reach is 0, check access to the NTP servers on UDP123.'
+    fi
     warn 'MANUAL: external scan of SSH/HTTPS and closed panel ports; actual VPS restore and renewal test.'
 }
 
