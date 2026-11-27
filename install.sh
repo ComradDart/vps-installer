@@ -156,13 +156,12 @@ main() {
             (( $# <= 1 )) || die 'Unexpected arguments';;
         *) die 'Unknown command; see --help';;
     esac
-    init_runtime
     if [[ ${1:-"--menu"} == --menu ]]; then
-        local menu_command
-        maintenance_menu
-        [[ -n $menu_command ]] || return 0
-        set -- "$menu_command"
+        [[ $EUID == 0 ]] || die 'Run with sudo on the target VPS'
+        run_maintenance_menu
+        return
     fi
+    init_runtime
     if [[ $1 == --install ]]; then install_main; return; fi
     load_state
     case "$1" in

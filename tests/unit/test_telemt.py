@@ -220,12 +220,12 @@ def test_maintenance_menu_dispatches_existing_commands(tmp_path, role, choice, s
     result = subprocess.run(['bash', '-c', '''
 source "$1/lib/maintenance.sh"
 STATE=$4
-load_state() { ROLE=$TEST_ROLE DOMAIN=example.test; }
+state_get() { if [[ $1 == role ]]; then echo "$TEST_ROLE"; else echo example.test; fi; }
 TEST_ROLE=$2
-die() { exit 1; }
+warn() { printf '%s\n' "$*" >&2; }
 ask() { printf -v "$1" '%s' "$test_choice"; }
 test_choice=$3
-maintenance_menu
+maintenance_menu || exit $?
 printf 'SELECTED=%s\\n' "$menu_command"
 ''', 'test', str(APP), role, choice, str(state)], text=True, capture_output=True)
     if selected is None:
@@ -259,3 +259,22 @@ def test_check_recovers_reality_identity_after_removed_test_client():
     row['streamSettings'] = json.dumps(stream)
     with pytest.raises(SetupError, match='REALITY settings differ'):
         checked_identity([row], state, profile, saved)
+
+
+def test_menu_returns_after_success_and_failure(tmp_path):
+    (tmp_path / 'install.sh').write_text('printf "ACTION %s\\n" "$1"\n[[ $1 == --status ]]\n')
+    result = bash('''
+source "$APP/lib/maintenance.sh"
+APP=$1
+choices=(--status --check "")
+index=0
+maintenance_menu() {
+    menu_command=${choices[index]}
+    index=$((index + 1))
+}
+menu_pause() { echo PAUSE; }
+run_maintenance_menu
+''', tmp_path)
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == ['ACTION --status', 'PAUSE', 'ACTION --check', 'PAUSE']
+    assert 'код 1' in result.stderr

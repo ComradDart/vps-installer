@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# menu_command is returned to main via Bash dynamic scope.
+# menu_command is returned to the menu loop via Bash dynamic scope.
 # shellcheck disable=SC2034
 maintenance_menu() {
     local choice
     printf '\nVPS Installer\n'
     printf '%s\n' '1. Установить или продолжить установку'
     if [[ -f $STATE ]]; then
-        load_state
+        ROLE=$(state_get role) || return 1
+        DOMAIN=$(state_get domain) || return 1
         printf '%s · %s\n' "$ROLE" "$DOMAIN"
         printf '%s\n' '2. Статус' '3. Проверить стек' '4. Проверить VLESS' '5. Создать резервную копию'
         printf '%s\n' '6. Обновить код установщика' '7. Изменить заголовок и текст сайта'
@@ -18,7 +19,8 @@ maintenance_menu() {
     printf '%s\n' '0. Выход'
     ask choice 'Выберите действие' 0
     if [[ ! -f $STATE && $choice != 0 && $choice != 1 ]]; then
-        die 'Сначала выполните установку'
+        warn 'Сначала выполните установку'
+        return 1
     fi
     case "$choice" in
         1) menu_command=--install;;
@@ -29,14 +31,42 @@ maintenance_menu() {
         6) menu_command=--update;;
         7) menu_command=--reconfigure;;
         8|9)
-            [[ $ROLE == inbound ]] || die 'Telegram-прокси доступен только на INBOUND'
+            if [[ $ROLE != inbound ]]; then
+                warn 'Telegram-прокси доступен только на INBOUND'
+                return 1
+            fi
             if [[ $choice == 8 ]]; then menu_command=--telemt; else menu_command=--telemt-zapret2; fi;;
         10) menu_command=--reboot-weekly-on;;
         11) menu_command=--reboot-weekly-off;;
         0) menu_command='';;
-        *) die 'Выберите номер из меню';;
+        *) warn 'Выберите номер из меню'; return 1;;
     esac
 }
+run_maintenance_menu() {
+    local menu_command status
+    while true; do
+        menu_command=''
+        if maintenance_menu; then
+            [[ -n $menu_command ]] || return 0
+            # Each action owns its lock and cleanup in a separate shell.
+            if bash "$APP/install.sh" "$menu_command"; then
+                if [[ $menu_command == --install || $menu_command == --update ]]; then
+                    APP="$ROOT/app"
+                fi
+            else
+                status=$?
+                warn "Действие завершилось с ошибкой (код $status)."
+            fi
+        fi
+        menu_pause || return 0
+    done
+}
+
+menu_pause() {
+    local reply
+    read -r -p 'Нажмите Enter, чтобы вернуться в меню… ' reply </dev/tty
+}
+
 update_installer() {
     if [[ $APP == "$ROOT/app" ]]; then
         # shellcheck source=get.sh
