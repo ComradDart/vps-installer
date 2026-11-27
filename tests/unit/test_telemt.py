@@ -278,3 +278,22 @@ run_maintenance_menu
     assert result.returncode == 0
     assert result.stdout.splitlines() == ['ACTION --status', 'PAUSE', 'ACTION --check', 'PAUSE']
     assert 'код 1' in result.stderr
+
+
+@pytest.mark.parametrize(('role', 'saved', 'active', 'expected'), [
+    ('inbound', 'no', 'yes', True),
+    ('inbound', 'no', 'no', False),
+    ('outbound', 'no', 'yes', False),
+    ('inbound', 'yes', 'no', True),
+])
+def test_stack_checks_running_legacy_telemt(role, saved, active, expected):
+    result = bash('''
+source "$APP/lib/checks.sh"
+ROLE=$1 TELEMT=$2
+systemctl() {
+    [[ "$*" == "is-active --quiet mtproxyl-telemt.service" && $active == yes ]]
+}
+active=$3
+stack_uses_telemt
+''', role, saved, active)
+    assert (result.returncode == 0) is expected

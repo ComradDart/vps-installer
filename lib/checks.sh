@@ -25,13 +25,22 @@ check_security_updates() {
         die "Inspect $report for the full simulation output"
     fi
 }
+stack_uses_telemt() {
+    [[ $TELEMT == yes ]] ||
+        { [[ $ROLE == inbound ]] && systemctl is-active --quiet mtproxyl-telemt.service; }
+}
 check_stack() {
     require_docker
     compose config --quiet
     [[ -s $ROOT/transport.json ]] || die 'No managed transport selected; run --configure-xray first'
     local mode
     local -a extra=()
-    if [[ $TELEMT == yes ]]; then extra=(--telemt); fi
+    if stack_uses_telemt; then
+        extra=(--telemt)
+        if [[ $TELEMT != yes ]]; then
+            warn 'Обнаружен запущенный Telemt без регистрации. Проверяю его текущую конфигурацию. Для регистрации выберите пункт 8.'
+        fi
+    fi
     mode=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["mode"])' "$ROOT/transport.json")
     python3 "$APP/helpers/publications.py" "$mode" "${extra[@]}"
     python3 "$APP/helpers/db.py" integrity "$ROOT/db/x-ui.db"
@@ -54,7 +63,7 @@ check_stack() {
     python3 "$APP/helpers/listeners.py" "$SSH_PORT" "${extra[@]}"
     systemctl is-active --quiet vps-installer-renew.timer vps-installer-backup.timer
     python3 "$APP/helpers/automation.py" check "$ROOT"
-    if [[ $TELEMT == yes ]]; then python3 "$APP/helpers/telemt.py" check "$ROOT"; fi
+    if ((${#extra[@]})); then python3 "$APP/helpers/telemt.py" check "$ROOT"; fi
     # Evaluate effective unattended-upgrades configuration without upgrading packages.
     check_security_updates
     warn 'MANUAL: external scan of SSH/HTTPS and closed panel ports; actual VPS restore and renewal test.'
