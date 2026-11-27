@@ -332,3 +332,15 @@ def test_socks_adoption_reports_incompatible_fields_without_credentials():
         socks_inbound([row])
     assert all(field in str(error.value) for field in ('listen', 'auth', 'UDP'))
     assert 'do-not-print' not in str(error.value)
+
+
+@pytest.mark.parametrize('auth', [None, '', 'noauth'])
+@pytest.mark.parametrize('account_field', ['accounts', 'users'])
+def test_socks_adoption_ignores_unused_credentials_for_noauth(auth, account_field):
+    settings = {account_field: [{'user': 'unused', 'pass': 'not-a-real-password'}]}
+    if auth is not None:
+        settings['auth'] = auth
+    row = dict(id=2, tag='in-1080-tcp', port=1080, protocol='socks', listen='',
+               enable=True, settings=settings, streamSettings='')
+    assert socks_inbound([row]) == row
+    assert row['settings'][account_field] == settings[account_field]

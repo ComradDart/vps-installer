@@ -108,8 +108,8 @@ def socks_inbound(rows,cache=None):
             ('protocol (expected SOCKS or mixed)',row.get('protocol') in ('socks','mixed')),
             ('listen (expected default or 0.0.0.0 inside Docker)',row.get('listen','') in ('','0.0.0.0')),
             ('enable (expected true)',row.get('enable') is True),
-            ('auth (expected noauth without accounts)',settings.get('auth','noauth')=='noauth'
-             and not settings.get('accounts') and not settings.get('users')),
+            # Xray consults accounts only when password authentication is selected.
+            ('auth (expected noauth)',settings.get('auth') in (None,'','noauth')),
             ('UDP (expected disabled)',settings.get('udp',False) is False),
             ('security (expected none)',stream.get('security','none')=='none'),
             ('network (expected TCP/raw)',stream.get('network','tcp') in ('tcp','raw')),
