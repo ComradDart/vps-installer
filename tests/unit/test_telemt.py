@@ -344,3 +344,24 @@ def test_socks_adoption_ignores_unused_credentials_for_noauth(auth, account_fiel
                enable=True, settings=settings, streamSettings='')
     assert socks_inbound([row]) == row
     assert row['settings'][account_field] == settings[account_field]
+
+
+def test_adopts_existing_3x_ui_socks_rule_without_changes():
+    peer, template = deployed()
+    rule = dict(type='field', inboundTag=['in-1080-tcp'], outboundTag='vps-installer-exit',
+                enabled=True, comment='Telegram SOCKS')
+    template['routing']['rules'].insert(2, rule)
+    original = copy.deepcopy(template)
+    assert socks_route(template, 'in-443-tcp', 'in-1080-tcp', peer) == original
+    assert template == original
+
+
+@pytest.mark.parametrize('change', [{'enabled': False}, {'network': 'udp'}, {'outboundTag': 'direct'}])
+def test_socks_rule_metadata_does_not_bypass_validation(change):
+    peer, template = deployed()
+    rule = dict(type='field', inboundTag=['in-1080-tcp'], outboundTag='vps-installer-exit',
+                enabled=True, comment='Telegram SOCKS')
+    rule.update(change)
+    template['routing']['rules'].insert(2, rule)
+    with pytest.raises(SetupError, match='Conflicting or disabled SOCKS route'):
+        socks_route(template, 'in-443-tcp', 'in-1080-tcp', peer)

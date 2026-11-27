@@ -89,9 +89,18 @@ def socks_route(template,main_tag,socks_tag,peer):
     index,tag=relay_route(template,main_tag,peer)
     result=copy.deepcopy(template);rules=result['routing']['rules']
     wanted={'type':'field','inboundTag':[socks_tag],'outboundTag':tag}
-    require(all(r==wanted for r in rules if socks_tag in r.get('inboundTag',[])),'Conflicting SOCKS route; existing configuration was preserved')
-    rules[:]=[r for r in rules if r!=wanted]
-    rules.insert(index+1,wanted)
+    existing=[r for r in rules if socks_tag in r.get('inboundTag',[])]
+    # 3x-ui stores UI metadata alongside the actual routing fields.
+    require(len(existing)<=1,'Multiple SOCKS routes; existing configuration was preserved')
+    if existing:
+        rule=existing[0]
+        match={key:value for key,value in rule.items() if key not in ('comment','enabled')}
+        require(rule.get('enabled',True) is True and match==wanted,
+                'Conflicting or disabled SOCKS route; existing configuration was preserved')
+        rules.remove(rule)
+    else:
+        rule=wanted
+    rules.insert(index+1,rule)
     return result
 
 def socks_inbound(rows,cache=None):
